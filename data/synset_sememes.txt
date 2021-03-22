@@ -10361,7 +10361,6 @@ bn:00000765n	document|文书 estimate|评估 judge|裁定 ExpressAgreement|示�
 bn:00065964n	part|部件 base|根 vegetable|蔬菜 eat|吃
 bn:00012385n	bacteria|微生物 medical|医 able|能 ResultIn|导致 disease|疾病
 bn:00073026n	InsectWorm|虫
-bn:14866890n	human|人 Occupation|职位 sport|体育 judge|裁定 compete|比赛
 bn:00018050n	food|食品 cook|烹调
 bn:00058104n	location|位置 north|北 west|西
 bn:00007283n	system|制度 manage|管理 politics|政
