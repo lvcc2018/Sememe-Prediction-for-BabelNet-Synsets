@@ -140,6 +140,7 @@ def data_clean(synset_dic_json):
     for k in tqdm(synset_dic.keys()):
         synset = {}
         synset['s'] = [ss.split('|')[1] for ss in synset_dic[k]['sememes']]
+        synset['b'] = k
         if 'definition_en' not in synset_dic[k].keys():
             print(synset_dic[k])
             return
@@ -166,7 +167,7 @@ def data_clean(synset_dic_json):
         json.dump(synset_list, f, ensure_ascii=False) 
     f.close()
 
-def split_data(data_file, save_path):
+def random_split_data(data_file, save_path):
     data = json.load(open(data_file))
     l = [i for i in range(len(data))]
     random.shuffle(l)
@@ -224,6 +225,7 @@ def gen_training_data(input_data_file,  output_dir, lang = 'ecf'):
     for instance in tqdm(input_data):
         temp = {}
         temp['s'] = [sememe_list.index(ss) for ss in instance['s']]
+        temp['b'] = instance['b']
         temp['di'] = [0]
         temp['di_tw'] = [0]
         temp['si'] = []
@@ -276,6 +278,27 @@ def gen_training_data(input_data_file,  output_dir, lang = 'ecf'):
         json.dump(output_data, f, ensure_ascii=False) 
     f.close()
 
+def split_data(data_dir):
+    train = json.load(open('./data/train_list.json'))
+    valid = json.load(open('./data/valid_list.json'))
+    test = json.load(open('./data/test_list.json'))
+
+    train_data = []
+    valid_data = []
+    test_data = []
+
+    data = json.load(open(data_dir+'/data.json'))
+    for instance in data:
+        if instance['b'] in train:
+            train_data.append(instance)
+        elif instance['b'] in valid:
+            valid_data.append(instance)
+        elif instance['b'] in test:
+            test_data.append(instance)
+    json.dump(train_data, open(data_dir + '/train_data.json', 'w'))
+    json.dump(valid_data, open(data_dir + '/valid_data.json', 'w'))
+    json.dump(test_data, open(data_dir + '/test_data.json', 'w'))
+
 def gen_image_tensor(input_data_dir, output_file):
     preprocess = transforms.Compose([
         transforms.Resize(256),
@@ -297,7 +320,7 @@ def gen_image_tensor(input_data_dir, output_file):
                 babel_images[bn] = torch.cat((babel_images[bn], input_batch), 0)
         except:
             continue
-    json.dump(open(output_file,'w',encoding='utf-8'), babel_images)
+    json.dump(babel_images, open(output_file,'w',encoding='utf-8'))
 
 
         
