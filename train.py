@@ -241,6 +241,7 @@ def train(args):
 if __name__ == "__main__":    
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_path", type = str, default = './data/ecf_data/')
+    parser.add_argument("--sememe_number", type = int, default = sememe_number)
     parser.add_argument("--batch_size", type = int, default = 4)
     parser.add_argument("--hidden_size", type =int ,default = 768)
     parser.add_argument("--epoch_num", type = int, default = 100)

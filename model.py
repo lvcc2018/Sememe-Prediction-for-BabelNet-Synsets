@@ -30,37 +30,34 @@ class MSSP(torch.nn.Module):
         self.sememe_number = args.sememe_number
         self.hidden_size = args.hidden_size
         self.encoder = DefEncoder()
-        self.fc = torch.nn.Linear(self.hidden_size, self.sememe_number)
+        self.batch_size = args.batch_size
+        self.fc = torch.nn.Linear(self.hidden_size, sememe_number)
         self.loss = torch.nn.MultiLabelSoftMarginLoss()
     
-    def forward(self, operation, x=None, y=None, mask=None):
-        
-        # h: Tensor(batch, sequence_length, hidden_size)
+    def forward(self, operation, x=None, y=None, mask=None, index=None, index_mask=None):
         h = self.encoder(x = x, mask = mask)
-        # pos_score: T(batch_size, sequence_length, sememe_number)
-        pos_score = self.fc(h)
-        mask_3 = mask.to(torch.float32).unsqueeze(2)
-        pos_score = pos_score * mask_3 + (-1e7) * (1 - mask_3)
-        # score: T(batch_size, sememe_number)
-        score, _ = torch.max(pos_score, dim=1)
-        _, indices = torch.sort(score, descending=True)
         if operation == 'train':
+            pos_score = self.fc(h)
+            mask_3 = mask.to(torch.float32).unsqueeze(2)
+            pos_score = pos_score * mask_3 + (-1e7) * (1 - mask_3)
+            score, _ = torch.max(pos_score, dim=1)
+            _, indices = torch.sort(score, descending=True)
+            loss = self.loss(score, y)
+            return loss, _, indices
+        elif operation == 'pretrain':
+            piece_state = torch.empty((0, index_mask.shape[1], self.hidden_size), dtype=torch.float32, device=device)
+            for i in range(index_mask.shape[0]):
+                idx_state = torch.empty((0, self.hidden_size), dtype = torch.float32, device=device)
+                for j in index[i]:
+                    idx_state = torch.cat((idx_state, h[i][j].unsqueeze(0)))
+                piece_state = torch.cat((piece_state, idx_state.unsqueeze(0)))
+            pos_score = self.fc(piece_state)
+            mask_3 = index_mask.to(torch.float32).unsqueeze(2)
+            pos_score = pos_score * mask_3 + (-1e7) * (1 - mask_3)
+            score, _ = torch.max(pos_score, dim=1)
+            _, indices = torch.sort(score, descending=True)
             loss = self.loss(score, y)
             return loss, score, indices
-        elif operation == 'inference':
-            return score, indices
-        '''
-        # h: Tensor(batch, hidden_size)
-        h = self.encoder(x = x, mask = mask)
-        # pos_score: T(batch_size, sememe_number)
-        score = self.fc(h)
-        _, indices = torch.sort(score, descending=True)
-        if operation == 'train':
-            loss = self.loss(score, y)
-            return loss, score, indices
-        elif operation == 'inference':
-            return score, indices
-        '''
 
 class ImageEncoder(torch.nn.Module):
     def __init__(self):
