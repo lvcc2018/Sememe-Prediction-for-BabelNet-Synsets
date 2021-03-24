@@ -7,10 +7,13 @@ import string
 import re
 import random
 import torch
+import os
 from tqdm import tqdm
 from transformers import XLMRobertaTokenizer
 import OpenHowNet
 import thulac
+from PIL import Image
+from torchvision import transforms
 
 # 含定义的synset文件
 babel_glosses_file = './data/babel_glosses.txt'
@@ -29,6 +32,9 @@ babel_data_file = './data/babel_data.json'
 
 # 分词器
 tokenizer = XLMRobertaTokenizer.from_pretrained('xlm-roberta-base')
+
+# 图片文件夹
+babel_images_path = '/data2/private/lvchuancheng/babel_images'
 
 # hownet接口
 hownet_dict = OpenHowNet.HowNetDict()
@@ -269,10 +275,35 @@ def gen_training_data(input_data_file,  output_dir, lang = 'ecf'):
     with open(output_dir + '/data.json', 'w', encoding='utf-8') as f:
         json.dump(output_data, f, ensure_ascii=False) 
     f.close()
-            
+
+def gen_image_tensor(input_data_dir, output_file):
+    preprocess = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    file_names = os.listdir(input_data_dir)
+    babel_images = {}
+    for file_name in tqdm(file_names):
+        try:
+            bn = file_name[:-6]
+            input_image = Image.open(babel_images_path+'/'+file_name).convert('RGB')
+            input_tensor = preprocess(input_image)
+            input_batch = input_tensor.unsqueeze(0)
+            if bn not in babel_images.keys():
+                babel_images[bn] = input_batch
+            else:
+                babel_images[bn] = torch.cat((babel_images[bn], input_batch), 0)
+        except:
+            continue
+    json.dump(open(output_file,'w',encoding='utf-8'), babel_images)
+
 
         
 if __name__ == "__main__":
-    gen_babel_data()
-    data_clean('./data/babel_data.json')
-    gen_training_data('./data/data_all.json', './data/ecf_data', 'ecf')
+    # gen_babel_data()
+    # data_clean('./data/babel_data.json')
+    # gen_training_data('./data/data_all.json', './data/ecf_data', 'ecf')
+    gen_image_tensor(babel_images_path, './data/babel_images.json')
+

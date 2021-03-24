@@ -9,7 +9,7 @@ from transformers import XLMRobertaTokenizer, XLMRobertaModel, AdamW
 
 
 
-class XLMREncoder(torch.nn.Module):
+class DefEncoder(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.encoder = XLMRobertaModel.from_pretrained('xlm-roberta-base', return_dict = True)
@@ -29,7 +29,7 @@ class MSSP(torch.nn.Module):
         super().__init__()
         self.sememe_number = args.sememe_number
         self.hidden_size = args.hidden_size
-        self.encoder = XLMREncoder()
+        self.encoder = DefEncoder()
         self.fc = torch.nn.Linear(self.hidden_size, self.sememe_number)
         self.loss = torch.nn.MultiLabelSoftMarginLoss()
     
@@ -61,3 +61,12 @@ class MSSP(torch.nn.Module):
         elif operation == 'inference':
             return score, indices
         '''
+
+class ImageEncoder(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.encoder = torch.hub.load('pytorch/vision:v0.9.0', 'resnet18', pretrained=True)
+    
+    def forward(self, x):
+        output = model(x)
+        return output

@@ -51,7 +51,6 @@ def get_def(instance, extended = True):
 
 def sp_collate_fn(batch):
     sememes = [instance['s_i'] for instance in batch]
-    # 直接喂双语定义向量
     definition_words = [tokenizer(get_def(instance)[0]+"</s>"+get_def(instance)[1])['input_ids'] for instance in batch]
     sememes_t = torch.tensor(get_sememe_label(sememes), dtype=torch.float32, device=device)
     definition_words_t = torch.tensor(build_sentence_numpy(definition_words), dtype=torch.int64, device=device)
