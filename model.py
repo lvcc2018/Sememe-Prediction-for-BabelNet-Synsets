@@ -14,14 +14,16 @@ class DefEncoder(torch.nn.Module):
         super().__init__()
         self.encoder = XLMRobertaModel.from_pretrained('xlm-roberta-base', return_dict = True)
     
-    def forward(self, x, mask):
+    def forward(self, operation, x, mask):
         # x: Tensor(batch, sequence_length) float32
         # mask: Tensor(batch, sequence_length) float32
         output = self.encoder(input_ids = x, attention_mask = mask)
-        # h: Tensor(batch, sequence_length, hidden_size)
-        h = output.last_hidden_state
-        # h: Tensor(batch, hidden_size)
-        # h = output.pooler_output
+        if operation == 'pretrain':
+            # h: Tensor(batch, sequence_length, hidden_size)
+            h = output.last_hidden_state
+        elif operation == 'train':
+            # h: Tensor(batch, hidden_size)
+            h = output.pooler_output
         return h
 
 class MSSP(torch.nn.Module):
@@ -35,16 +37,22 @@ class MSSP(torch.nn.Module):
         self.loss = torch.nn.MultiLabelSoftMarginLoss()
     
     def forward(self, operation, x=None, y=None, mask=None, index=None, index_mask=None):
-        h = self.encoder(x = x, mask = mask)
         if operation == 'train':
+            h = self.encoder(operation = 'train', x = x, mask = mask)
             pos_score = self.fc(h)
+            '''
             mask_3 = mask.to(torch.float32).unsqueeze(2)
             pos_score = pos_score * mask_3 + (-1e7) * (1 - mask_3)
             score, _ = torch.max(pos_score, dim=1)
             _, indices = torch.sort(score, descending=True)
             loss = self.loss(score, y)
             return loss, _, indices
+            '''
+            _, indices = torch.sort(pos_score, descending=True)
+            loss = self.loss(pos_score, y)
+            return loss, pos_score, indices 
         elif operation == 'pretrain':
+            h = self.encoder(operation = 'pretrain', x = x, mask = mask)
             piece_state = torch.empty((0, index_mask.shape[1], self.hidden_size), dtype=torch.float32, device=device)
             for i in range(index_mask.shape[0]):
                 idx_state = torch.empty((0, self.hidden_size), dtype = torch.float32, device=device)

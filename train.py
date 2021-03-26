@@ -128,8 +128,9 @@ def train(args):
                 optimizer.step()
                 encoder_optimizer.step()
                 predicted = indices.detach().cpu().numpy().tolist()
+                score = score.detach().cpu().numpy()
                 for i in range(len(idx_sememes)):
-                    m, f = evaluate(idx_sememes[i], predicted[i],args.threshold)
+                    m, f = evaluate(idx_sememes[i], predicted[i], score, args.threshold)
                     pretrain_map += m
                     pretrain_f1 += f
                 pretrain_loss += loss.item()
@@ -142,7 +143,7 @@ def train(args):
                 predicted = indices.detach().cpu().numpy().tolist()
                 score = score.detach().cpu().numpy()
                 for i in range(len(idx_sememes)):
-                    m, f = evaluate(idx_sememes[i], predicted[i],args.threshold)
+                    m, f = evaluate(idx_sememes[i], predicted[i], score, args.threshold)
                     prevalid_map += m
                     prevalid_f1 += f
                 prevalid_loss += loss.item()
@@ -192,8 +193,9 @@ def train(args):
             optimizer.step()
             encoder_optimizer.step()
             predicted = indices.detach().cpu().numpy().tolist()
+            score = score.detach().cpu().numpy()
             for i in range(len(sememes)):
-                m, f = evaluate(sememes[i], predicted[i], args.threshold)
+                m, f = evaluate(sememes[i], predicted[i], score, args.threshold)
                 train_map += m
                 train_f1 += f
             train_loss += loss.item()
@@ -207,7 +209,7 @@ def train(args):
             predicted = indices.detach().cpu().numpy().tolist()
             score = score.detach().cpu().numpy()
             for i in range(len(sememes)):
-                m, f  = evaluate(sememes[i], predicted[i], args.threshold)
+                m, f  = evaluate(sememes[i], predicted[i], score, args.threshold)
                 valid_map += m
                 valid_f1 += f
             valid_loss += loss.item()
@@ -248,7 +250,7 @@ if __name__ == "__main__":
     parser.add_argument("--pretrain_epoch_num", type = int, default = 100)
     parser.add_argument("--mix_train", type = int, default = 1)
     parser.add_argument("--result", type = str, default = 'model')
-    parser.add_argument("--threshold", type = int, default = 5)
+    parser.add_argument("--threshold", type = int, default = -1)
     parser.add_argument("--pretrain_model_lr", type = float, default = 1e-5)
     parser.add_argument("--classifier_lr", type = float, default = 0.001)
     args = parser.parse_args()

@@ -8,6 +8,7 @@ import re
 import random
 import torch
 import os
+import numpy
 from tqdm import tqdm
 from transformers import XLMRobertaTokenizer
 import OpenHowNet
@@ -222,10 +223,13 @@ def gen_training_data(input_data_file,  output_dir, lang = 'ecf'):
     sememe_list = sememe_str.split(' ')
     input_data = json.load(open(input_data_file))
     output_data = []
+    babel_images = json.load(open('./data/babel_images.json'))
     for instance in tqdm(input_data):
         temp = {}
         temp['s'] = [sememe_list.index(ss) for ss in instance['s']]
         temp['b'] = instance['b']
+        if instance['b'] in babel_images.keys():
+            temp['p'] = babel_images[instance['b']]
         temp['di'] = [0]
         temp['di_tw'] = [0]
         temp['si'] = []
@@ -311,15 +315,14 @@ def gen_image_tensor(input_data_dir, output_file):
     for file_name in tqdm(file_names):
         try:
             bn = file_name[:-6]
+            if bn not in babel_images.keys():
+                babel_images[bn] = []
             input_image = Image.open(babel_images_path+'/'+file_name).convert('RGB')
             input_tensor = preprocess(input_image)
-            input_batch = input_tensor.unsqueeze(0)
-            if bn not in babel_images.keys():
-                babel_images[bn] = input_batch
-            else:
-                babel_images[bn] = torch.cat((babel_images[bn], input_batch), 0)
+            babel_images[bn].append(input_tensor.numpy().tolist())
         except:
             continue
+        
     json.dump(babel_images, open(output_file,'w',encoding='utf-8'))
 
 
@@ -329,4 +332,5 @@ if __name__ == "__main__":
     # data_clean('./data/babel_data.json')
     # gen_training_data('./data/data_all.json', './data/ecf_data', 'ecf')
     gen_image_tensor(babel_images_path, './data/babel_images.json')
+    # split_data('./data/ecf_data')
 
