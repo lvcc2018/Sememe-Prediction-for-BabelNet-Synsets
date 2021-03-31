@@ -71,7 +71,7 @@ def sp_collate_fn(batch):
     idx_sememes_t = torch.tensor(get_sememe_label(idx_sememes), dtype = torch.float32, device=device)
     idx = [instance[0] for instance in idx]
     idx_mask = torch.tensor(build_mask_numpy(idx), dtype = torch.int64, device=device)
-    idx = build_idx(idx)
+    # idx = build_idx(idx)
     return sememes_t, definition_words_t, sememes, mask_t, idx, idx_sememes_t, idx_sememes, idx_mask
 
 def get_dataloader(batch_size, train_data, valid_data, test_data):

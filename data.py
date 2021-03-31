@@ -20,7 +20,7 @@ from torchvision import transforms
 babel_glosses_file = './data/babel_glosses.txt'
 
 # 含图片url的synset文件
-babel_images_file = './data/babel_images.txt'
+babel_images_file = './data/babel_main_images.txt'
 
 # 带义原标注的synset数据文件
 synset_sememe_file = './data/synset_sememes.txt'
@@ -94,9 +94,12 @@ def read_synset_sememes(fin):
     sememes = []
     synset_dic = {}
     synset_id_list = []
+    synset2idx = {}
+    synset_idx = 0
     while True:
         line = fin.readline()
         if not line:
+            json.dump(synset2idx, open('./data/synset2idx.json', 'w'))
             return sememes, synset_dic, synset_id_list
         line = line.strip().split()
         synset_id = line[0]
@@ -104,6 +107,8 @@ def read_synset_sememes(fin):
         synset_id_list.append(synset_id)
         if synset_id not in synset_dic.keys():
             synset_dic[synset_id] = {}
+            synset2idx[synset_id] = synset_idx
+            synset_idx += 1
         synset_dic[synset_id]['sememes'] = synset_sememes
         for sememe in synset_sememes:
             if sememe not in sememes:
@@ -311,15 +316,15 @@ def gen_image_tensor(input_data_dir, output_file):
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
     file_names = os.listdir(input_data_dir)
+    print(len(file_names))
     babel_images = {}
     for file_name in tqdm(file_names):
+        bn = file_name[:-4]
         try:
-            bn = file_name[:-6]
             if bn not in babel_images.keys():
-                babel_images[bn] = []
-            input_image = Image.open(babel_images_path+'/'+file_name).convert('RGB')
-            input_tensor = preprocess(input_image)
-            babel_images[bn].append(input_tensor.numpy().tolist())
+                input_image = Image.open(babel_images_path+'/'+file_name).convert('RGB')
+                input_tensor = preprocess(input_image)
+                babel_images[bn] = input_tensor.numpy().tolist()
         except:
             continue
         
@@ -333,4 +338,3 @@ if __name__ == "__main__":
     # gen_training_data('./data/data_all.json', './data/ecf_data', 'ecf')
     gen_image_tensor(babel_images_path, './data/babel_images.json')
     # split_data('./data/ecf_data')
-
