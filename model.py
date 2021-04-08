@@ -7,7 +7,8 @@ from tqdm import tqdm
 import argparse
 from transformers import XLMRobertaTokenizer, XLMRobertaModel, AdamW
 from PIL import Image
-from torchvision import transforms
+from torchvision import transforms, models
+
 
 sememe_number = 2187
 
@@ -16,6 +17,22 @@ def get_sememe_label(sememes):
     for s in sememes:
         l[s] = 1
     return l
+
+class ImageEncoder(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        # self.encoder = torch.hub.load('pytorch/vision:v0.9.0', 'resnet18', pretrained=True)
+        # self.encoder = torch.hub.load('pytorch/vision:v0.9.0', 'resnet34', pretrained=True)
+        self.encoder = models.resnet50(pretrained=True)
+        self.fc = torch.nn.Linear(1000, sememe_number)
+        self.loss = torch.nn.MultiLabelSoftMarginLoss()
+
+    def forward(self, x, y):
+        output = self.encoder(x)
+        pos_score = self.fc(output)
+        _, indices = torch.sort(pos_score, descending=True)
+        loss = self.loss(pos_score, y)
+        return loss, pos_score, indices 
 
 class DefEncoder(torch.nn.Module):
     def __init__(self):
@@ -68,34 +85,17 @@ class MSSP(torch.nn.Module):
             loss = self.loss(score, y)
             return loss, score, indices
 
-class ImageEncoder(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.encoder = torch.hub.load('pytorch/vision:v0.9.0', 'resnet18', pretrained=True)
-        self.fc = torch.nn.Linear(1000, sememe_number)
-        self.loss = torch.nn.MultiLabelSoftMarginLoss()
 
-    def forward(self, x, y):
-        output = self.encoder(x)
-        pos_score = self.fc(output)
-        _, indices = torch.sort(pos_score, descending=True)
-        loss = self.loss(pos_score, y)
-        return loss, pos_score, indices 
 
 class ImageDataset(torch.utils.data.Dataset):
-    def __init__(self, image_folder):
+    def __init__(self, data_list, image_folder, transform):
         self.image_folder = image_folder
         with open('./data/sememe_all.txt', 'r', encoding='utf-8') as f:
             sememe_str = f.read()
         f.close()
         self.sememe_list = sememe_str.split(' ')
         self.synset_dic = {}
-        self.preprocess = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
+        self.preprocess = transform
         f = open('./data/synset_sememes.txt','r',encoding = 'utf-8')
         while True:
             line = f.readline()
@@ -107,20 +107,33 @@ class ImageDataset(torch.utils.data.Dataset):
             if synset_id not in self.synset_dic.keys():
                 self.synset_dic[synset_id] = []
             self.synset_dic[synset_id] = [self.sememe_list.index(s) for s in [ss.split('|')[1] for ss in synset_sememes]]
-        count = 0
 
         file_names = os.listdir(self.image_folder)
-        self.bn_list = []
-        for file_name in file_names:
-            bn = file_name[:-4]
-            if bn not in self.bn_list:
-                self.bn_list.append(bn)
-    
+        self.file_list = json.load(open(data_list))
+
     def __len__(self):
-        return len(self.bn_list)
+        return len(self.file_list)
     
     def __getitem__(self, index):
-        label = torch.tensor(get_sememe_label(self.synset_dic[self.bn_list[index]]), dtype = torch.long)
-        input_image = Image.open(self.image_folder+'/'+self.bn_list[index]+'.jpg').convert('RGB')
+        label = torch.tensor(get_sememe_label(self.synset_dic[self.file_list[index][:-6]]), dtype = torch.long)
+        input_image = Image.open(self.image_folder+'/'+self.file_list[index]).convert('RGB')
         input_tensor = self.preprocess(input_image)
         return (label, input_tensor)
+
+class MultiSrcDataset(torch.utils.data.Dataset):
+    def __init__(self, sememe_list, synset_list, image_list, babel_data, image_folder, tokenizer, transform):
+        self.synset_list = json.load(open(synset_list))
+        self.image_list = json.load(open(image_list))
+        self.babel_data = json.load(open(babel_data))
+        self.image_folder = image_folder
+        self.tokenizer = tokenizer
+        self.preprocess = transform
+        sememe_str = open(sememe_list, 'r', encoding='utf-8').read()
+        self.sememe_list = sememe_str.split(' ')
+
+        self.data_list = []
+        for bn in synset_list:
+            
+        
+        
+        
