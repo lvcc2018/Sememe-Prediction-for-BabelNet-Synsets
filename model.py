@@ -4,10 +4,15 @@ import numpy as np
 import torch
 import torch.utils.data
 from tqdm import tqdm
+from nltk import word_tokenize, pos_tag
+from nltk.corpus import wordnet
 import argparse
+import OpenHowNet
 from transformers import XLMRobertaTokenizer, XLMRobertaModel, AdamW
 from PIL import Image
 from torchvision import transforms, models
+import thulac
+from nltk.stem import WordNetLemmatizer
 
 
 sememe_number = 2187
@@ -17,6 +22,67 @@ def get_sememe_label(sememes):
     for s in sememes:
         l[s] = 1
     return l
+
+def get_wordnet_pos(tag):
+    if tag.startswith('J'):
+        return wordnet.ADJ
+    elif tag.startswith('V'):
+        return wordnet.VERB
+    elif tag.startswith('N'):
+        return wordnet.NOUN
+    elif tag.startswith('R'):
+        return wordnet.ADV
+    else:
+        return None
+
+def en_lemmatize(wnl, sentence):
+    tokens = word_tokenize(sentence)
+    tagged_sent = pos_tag(tokens)
+    lemmas_sent = []
+    for tag in tagged_sent:
+        wordnet_pos = get_wordnet_pos(tag[1]) or wordnet.NOUN
+        lemmas_sent.append(wnl.lemmatize(tag[0], pos=wordnet_pos))
+    return lemmas_sent
+
+def cn_t2s(lac, sentence):
+    result = lac.cut(sentence, text = True)
+    result = result.split(' ')
+    return result
+
+def get_ids(word_list,tokenizer, hownet_dict, sememe_list, index_offset = 0):
+    result_ids = []
+    result_i2s = []
+    idx = index_offset
+    for w in word_list:
+        idx_list = []
+        word_ids = tokenizer(w)['input_ids']
+        for i in range(1,len(word_ids)-1):
+            idx += 1
+            idx_list.append(idx)
+            result_ids.append(word_ids[i])
+        ids_sememe = hownet_dict.get_sememes_by_word(w,structured=False,lang="zh",merge=True)
+        if ids_sememe:
+            if isinstance(ids_sememe, dict):
+                ids_sememe = list(list(ids_sememe.items())[0][1])
+            elif isinstance(ids_sememe, set):
+                ids_sememe = list(ids_sememe)
+            temp = []
+            for s in ids_sememe:
+                if s in sememe_list:
+                    temp.append(sememe_list.index(s))
+            if temp:
+                result_i2s.append([idx_list, temp])
+    if len(result_ids) > 512:
+        result_ids = result_ids[:511]
+        temp = 0
+        for i in range(len(result_i2s)):
+            for j in result_i2s[i][0]:
+                if j > 512 and temp == 0:
+                    temp = i
+                    break
+        if temp != 0:
+            result_i2s = result_i2s[:temp]
+    return result_ids, result_i2s
 
 class ImageEncoder(torch.nn.Module):
     def __init__(self):
@@ -107,8 +173,6 @@ class ImageDataset(torch.utils.data.Dataset):
             if synset_id not in self.synset_dic.keys():
                 self.synset_dic[synset_id] = []
             self.synset_dic[synset_id] = [self.sememe_list.index(s) for s in [ss.split('|')[1] for ss in synset_sememes]]
-
-        file_names = os.listdir(self.image_folder)
         self.file_list = json.load(open(data_list))
 
     def __len__(self):
@@ -121,7 +185,7 @@ class ImageDataset(torch.utils.data.Dataset):
         return (label, input_tensor)
 
 class MultiSrcDataset(torch.utils.data.Dataset):
-    def __init__(self, sememe_list, synset_list, image_list, babel_data, image_folder, tokenizer, transform):
+    def __init__(self, sememe_list, synset_list, image_list, babel_data, image_folder, tokenizer, transform, lang = 'ecf'):
         self.synset_list = json.load(open(synset_list))
         self.image_list = json.load(open(image_list))
         self.babel_data = json.load(open(babel_data))
@@ -130,10 +194,81 @@ class MultiSrcDataset(torch.utils.data.Dataset):
         self.preprocess = transform
         sememe_str = open(sememe_list, 'r', encoding='utf-8').read()
         self.sememe_list = sememe_str.split(' ')
-
         self.data_list = []
+        wnl = WordNetLemmatizer()
+        lac = thulac.thulac(T2S=True,seg_only=True)
+        hownet_dict = OpenHowNet.HowNetDict()
         for bn in synset_list:
-            
+            data = {}
+            data['sememes'] = [self.sememe_list.index(s) for s in [ss.split('|')[1] for ss in self.babel_data[bn]['sememes']]]
+            if len(self.babel_data[bn]['definition_en']) != 0:
+                data['w_e'] = (' | '.join([w.lower() for w in self.babel_data[bn]['word_en']])).split(' ')
+                data['d_e'] = en_lemmatize(wnl, self.babel_data[bn]['definition_en'][0].lower())
+            if len(self.babel_data[bn]['definition_cn']) != 0:
+                temp_w_c = [cn_t2s(lac,w) for w in self.babel_data[bn]['word_cn']]
+                data['w_c'] = []
+                for i in range(len(temp_w_c)):
+                    data['w_c'] += temp_w_c[i]
+                    data['w_c'].append('|')
+                if len(data['w_c']) > 0:
+                    data['w_c'].pop()
+                data['d_c'] = cn_t2s(lac, self.babel_data[bn]['definition_cn'][0])            
+            if len(self.babel_data[bn]['definition_fr']) != 0:
+                data['w_f'] = (' | '.join([w.lower() for w in self.babel_data[bn]['word_fr']])).split(' ')
+                data['d_f'] = self.babel_data[bn]['definition_fr'][0].lower().split(' ')
+            data['di'] = [0]
+            data['di_tw'] = [0]
+            data['si'] = []
+            data['si_tw'] = []
+            index = 0
+            index_tw = 0
+            if 'e' in lang:
+                if 'd_e' in data.keys():
+                    result_ids, result_i2s = get_ids(data['d_e'], hownet_dict, sememe_list, index)
+                    result_ids_tw, result_i2s_tw = get_ids(data['w_e'] + [':'] + data['d_e'], hownet_dict, sememe_list, index_tw)
+                    data['di'] += result_ids + [2]
+                    data['di_tw'] += result_ids_tw + [2]
+                    data['si'] += result_i2s
+                    data['si_tw'] += result_i2s_tw
+                    index += len(data['di'])
+                    index_tw += len(data['di_tw'])
+            if 'c' in lang:
+                if 'd_c' in data.keys():
+                    if lang.index('c') != 0:
+                        data['di'] += [2]
+                        data['di_tw'] += [2]
+                        index += 1
+                        index_tw += 1
+                    result_ids, result_i2s = get_ids(data['d_c'], hownet_dict, sememe_list, index)
+                    result_ids_tw, result_i2s_tw = get_ids(data['w_c'] + [':'] + data['d_c'], hownet_dict, sememe_list, index_tw)
+                    data['di'] += result_ids + [2]
+                    data['di_tw'] += result_ids_tw + [2]
+                    data['si'] += result_i2s
+                    data['si_tw'] += result_i2s_tw
+                    index += len(data['di'])
+                    index_tw += len(data['di_tw'])
+            if 'f' in lang:
+                if 'd_f' in data.keys():
+                    if lang.index('f') != 0:
+                        data['di'] += [2]
+                        data['di_tw'] += [2]
+                        index += 1
+                        index_tw += 1
+                    result_ids, result_i2s = get_ids(data['d_f'], hownet_dict, sememe_list, index)
+                    result_ids_tw, result_i2s_tw = get_ids(data['w_f'] + [':'] + data['d_f'], hownet_dict, sememe_list, index_tw)
+                    data['di'] += result_ids + [2]
+                    data['di_tw'] += result_ids_tw + [2]
+                    data['si'] += result_i2s
+                    data['si_tw'] += result_i2s_tw
+                    index += len(data['di'])
+                    index_tw += len(data['di_tw'])
+            self.data_list.append(data)
         
+    def __len__(self):
+        return len(self.data_list)
+    
+    def __getitem__(self, index):
+        pass
+            
         
         
