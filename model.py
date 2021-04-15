@@ -1,19 +1,19 @@
+import argparse
 import json
 import os
+
 import numpy as np
+import OpenHowNet
+import thulac
 import torch
 import torch.utils.data
-from tqdm import tqdm
-from nltk import word_tokenize, pos_tag
+from nltk import pos_tag, word_tokenize
 from nltk.corpus import wordnet
-import argparse
-import OpenHowNet
-from transformers import XLMRobertaTokenizer, XLMRobertaModel, AdamW
-from PIL import Image
-from torchvision import transforms, models
-import thulac
 from nltk.stem import WordNetLemmatizer
-
+from PIL import Image
+from torchvision import models, transforms
+from tqdm import tqdm
+from transformers import AdamW, XLMRobertaModel, XLMRobertaTokenizer
 
 sememe_number = 2187
 
@@ -49,7 +49,7 @@ def cn_t2s(lac, sentence):
     result = result.split(' ')
     return result
 
-def get_ids(word_list,tokenizer, hownet_dict, sememe_list, index_offset = 0):
+def get_ids(word_list, tokenizer, hownet_dict, sememe_list, index_offset = 0):
     result_ids = []
     result_i2s = []
     idx = index_offset
@@ -124,11 +124,10 @@ class MSSP(torch.nn.Module):
         self.hidden_size = args.hidden_size
         self.def_encoder = DefEncoder()
         self.batch_size = args.batch_size
-        self.synset2idx = json.load(open('./data/synset2idx.json'))
         self.fc = torch.nn.Linear(self.hidden_size, sememe_number)
         self.loss = torch.nn.MultiLabelSoftMarginLoss()
     
-    def forward(self, operation, x=None, y=None, mask=None, index=None, index_mask=None):
+    def forward(self, operation, device, x=None, y=None, mask=None, index=None, index_mask=None):
         if operation == 'train':
             h = self.def_encoder(operation = 'train', x = x, mask = mask)
             pos_score = self.fc(h)
@@ -141,6 +140,7 @@ class MSSP(torch.nn.Module):
             for i in range(index_mask.shape[0]):
                 idx_state = torch.empty((0, self.hidden_size), dtype = torch.float32, device=device)
                 for j in index[i]:
+                    # print(j, idx_state.shape, h.shape)
                     idx_state = torch.cat((idx_state, h[i][j].unsqueeze(0)))
                 piece_state = torch.cat((piece_state, idx_state.unsqueeze(0)))
             pos_score = self.fc(piece_state)
@@ -185,20 +185,22 @@ class ImageDataset(torch.utils.data.Dataset):
         return (label, input_tensor)
 
 class MultiSrcDataset(torch.utils.data.Dataset):
-    def __init__(self, sememe_list, synset_list, image_list, babel_data, image_folder, tokenizer, transform, lang = 'ecf'):
-        self.synset_list = json.load(open(synset_list))
-        self.image_list = json.load(open(image_list))
+    def __init__(self, synset_image_dic, babel_data, image_folder, tokenizer, transform, lang = 'ecf'):
+        # self.synset_list = json.load(open(synset_list))
+        # self.image_list = json.load(open(image_list))
+        self.synset_image_dic = json.load(open(synset_image_dic))
+        self.synset_list = self.synset_image_dic.keys()
         self.babel_data = json.load(open(babel_data))
         self.image_folder = image_folder
         self.tokenizer = tokenizer
         self.preprocess = transform
-        sememe_str = open(sememe_list, 'r', encoding='utf-8').read()
+        sememe_str = open('./data/sememe_all.txt', 'r', encoding='utf-8').read()
         self.sememe_list = sememe_str.split(' ')
         self.data_list = []
         wnl = WordNetLemmatizer()
         lac = thulac.thulac(T2S=True,seg_only=True)
         hownet_dict = OpenHowNet.HowNetDict()
-        for bn in synset_list:
+        for bn in tqdm(self.synset_list):
             data = {}
             data['sememes'] = [self.sememe_list.index(s) for s in [ss.split('|')[1] for ss in self.babel_data[bn]['sememes']]]
             if len(self.babel_data[bn]['definition_en']) != 0:
@@ -224,14 +226,14 @@ class MultiSrcDataset(torch.utils.data.Dataset):
             index_tw = 0
             if 'e' in lang:
                 if 'd_e' in data.keys():
-                    result_ids, result_i2s = get_ids(data['d_e'], hownet_dict, sememe_list, index)
-                    result_ids_tw, result_i2s_tw = get_ids(data['w_e'] + [':'] + data['d_e'], hownet_dict, sememe_list, index_tw)
+                    result_ids, result_i2s = get_ids(data['d_e'], tokenizer, hownet_dict, self.sememe_list, index)
+                    result_ids_tw, result_i2s_tw = get_ids(data['w_e'] + [':'] + data['d_e'], tokenizer, hownet_dict, self.sememe_list, index_tw)
                     data['di'] += result_ids + [2]
                     data['di_tw'] += result_ids_tw + [2]
                     data['si'] += result_i2s
                     data['si_tw'] += result_i2s_tw
-                    index += len(data['di'])
-                    index_tw += len(data['di_tw'])
+                    index = len(data['di'])
+                    index_tw = len(data['di_tw'])
             if 'c' in lang:
                 if 'd_c' in data.keys():
                     if lang.index('c') != 0:
@@ -239,14 +241,14 @@ class MultiSrcDataset(torch.utils.data.Dataset):
                         data['di_tw'] += [2]
                         index += 1
                         index_tw += 1
-                    result_ids, result_i2s = get_ids(data['d_c'], hownet_dict, sememe_list, index)
-                    result_ids_tw, result_i2s_tw = get_ids(data['w_c'] + [':'] + data['d_c'], hownet_dict, sememe_list, index_tw)
+                    result_ids, result_i2s = get_ids(data['d_c'], tokenizer, hownet_dict, self.sememe_list, index)
+                    result_ids_tw, result_i2s_tw = get_ids(data['w_c'] + [':'] + data['d_c'], tokenizer, hownet_dict, self.sememe_list, index_tw)
                     data['di'] += result_ids + [2]
                     data['di_tw'] += result_ids_tw + [2]
                     data['si'] += result_i2s
                     data['si_tw'] += result_i2s_tw
-                    index += len(data['di'])
-                    index_tw += len(data['di_tw'])
+                    index = len(data['di'])
+                    index_tw = len(data['di_tw'])
             if 'f' in lang:
                 if 'd_f' in data.keys():
                     if lang.index('f') != 0:
@@ -254,21 +256,29 @@ class MultiSrcDataset(torch.utils.data.Dataset):
                         data['di_tw'] += [2]
                         index += 1
                         index_tw += 1
-                    result_ids, result_i2s = get_ids(data['d_f'], hownet_dict, sememe_list, index)
-                    result_ids_tw, result_i2s_tw = get_ids(data['w_f'] + [':'] + data['d_f'], hownet_dict, sememe_list, index_tw)
+                    result_ids, result_i2s = get_ids(data['d_f'], tokenizer, hownet_dict, self.sememe_list, index)
+                    result_ids_tw, result_i2s_tw = get_ids(data['w_f'] + [':'] + data['d_f'], tokenizer, hownet_dict, self.sememe_list, index_tw)
                     data['di'] += result_ids + [2]
                     data['di_tw'] += result_ids_tw + [2]
                     data['si'] += result_i2s
                     data['si_tw'] += result_i2s_tw
-                    index += len(data['di'])
-                    index_tw += len(data['di_tw'])
+            data['image_file'] = self.synset_image_dic[bn]
+            
             self.data_list.append(data)
         
     def __len__(self):
         return len(self.data_list)
     
     def __getitem__(self, index):
-        pass
+        for image_file in self.data_list[index]['image_file']:
+            input_image = Image.open(self.image_folder+'/'+image_file).convert('RGB')
+            input_tensor = self.preprocess(input_image).unsqueeze(0)
+            if 'image' not in self.data_list[index].keys():
+                self.data_list[index]['image'] = input_tensor
+            else:
+                self.data_list[index]['image'] = torch.cat((self.data_list[index]['image'], input_tensor), 0)
+        return self.data_list[index]
+        
             
         
         
