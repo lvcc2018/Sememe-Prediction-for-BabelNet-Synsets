@@ -72,16 +72,6 @@ def get_ids(word_list, tokenizer, hownet_dict, sememe_list, index_offset = 0):
                     temp.append(sememe_list.index(s))
             if temp:
                 result_i2s.append([idx_list, temp])
-    if len(result_ids) > 512:
-        result_ids = result_ids[:511]
-        temp = 0
-        for i in range(len(result_i2s)):
-            for j in result_i2s[i][0]:
-                if j > 512 and temp == 0:
-                    temp = i
-                    break
-        if temp != 0:
-            result_i2s = result_i2s[:temp]
     return result_ids, result_i2s
 
 class ImageEncoder(torch.nn.Module):
@@ -110,6 +100,7 @@ class DefEncoder(torch.nn.Module):
         elif operation == 'train':
             # h: Tensor(batch, hidden_size)
             h = output.pooler_output
+            # h = output.last_hidden_state
         return h
 
 class MSSP(torch.nn.Module):
@@ -124,6 +115,7 @@ class MSSP(torch.nn.Module):
         self.loss = torch.nn.MultiLabelSoftMarginLoss()
     
     def forward(self, operation, device, x=None, y=None, mask=None, index=None, index_mask=None, image=None):
+        
         if image:
             image_state = torch.empty((0, 1000), dtype=torch.float32, device=device)
             for image_emb in image:
@@ -139,16 +131,15 @@ class MSSP(torch.nn.Module):
                 loss = self.loss(pos_score, y)
                 return loss, pos_score, indices 
             elif operation == 'pretrain':
-                #TODO:debug
-                defin_state = self.def_encoder(operation = 'pretrain', x = x, mask = mask)
+                # TODO:预训练时定义Embedding是batch_size*sequence_length*hidden_size
+                h = self.def_encoder(operation = 'pretrain', x = x, mask = mask)
                 piece_state = torch.empty((0, index_mask.shape[1], 768), dtype=torch.float32, device=device)
                 for i in range(index_mask.shape[0]):
                     idx_state = torch.empty((0, 768), dtype = torch.float32, device=device)
                     for j in index[i]:
-                        idx_state = torch.cat((idx_state, defin_state[i][j].unsqueeze(0)))
+                        idx_state = torch.cat((idx_state, h[i][j].unsqueeze(0)))
                     piece_state = torch.cat((piece_state, idx_state.unsqueeze(0)))
-                hidden_state = torch.cat((image_state.unsqueeze(1), piece_state))
-                pos_score = self.fc(hidden_state)
+                pos_score = self.fc(piece_state)
                 mask_3 = index_mask.to(torch.float32).unsqueeze(2)
                 pos_score = pos_score * mask_3 + (-1e7) * (1 - mask_3)
                 score, _ = torch.max(pos_score, dim=1)
@@ -159,9 +150,12 @@ class MSSP(torch.nn.Module):
             if operation == 'train':
                 h = self.def_encoder(operation = 'train', x = x, mask = mask)
                 pos_score = self.fc(h)
-                _, indices = torch.sort(pos_score, descending=True)
-                loss = self.loss(pos_score, y)
-                return loss, pos_score, indices 
+                mask_3 = mask.to(torch.float32).unsqueeze(2)
+                pos_score = pos_score * mask_3 + (-1e7) * (1 - mask_3)
+                score, _ = torch.max(pos_score, dim=1)
+                _, indices = torch.sort(score, descending=True)
+                loss = self.loss(score, y)
+                return loss, score, indices 
             elif operation == 'pretrain':
                 h = self.def_encoder(operation = 'pretrain', x = x, mask = mask)
                 piece_state = torch.empty((0, index_mask.shape[1], 768), dtype=torch.float32, device=device)
@@ -287,14 +281,34 @@ class MultiSrcDataset(torch.utils.data.Dataset):
                     data['di_tw'] += result_ids_tw + [2]
                     data['si'] += result_i2s
                     data['si_tw'] += result_i2s_tw
+            if len(data['di']) > 512:
+                data['di'] = data['di'][:510] + [2]
+                temp = 0
+                for i in range(len(data['si'])):
+                    for j in data['si'][i][0]:
+                        if j > 512 and temp == 0:
+                            temp = i
+                            break
+                if temp != 0:
+                    data['si'] = data['si'][:temp]
+            if len(data['di_tw']) > 512:
+                data['di_tw'] = data['di_tw'][:510] + [2]
+                temp = 0
+                for i in range(len(data['si_tw'])):
+                    for j in data['si_tw'][i][0]:
+                        if j > 512 and temp == 0:
+                            temp = i
+                            break
+                if temp != 0:
+                    data['si_tw'] = data['si_tw'][:temp]
             data['image_file'] = self.synset_image_dic[bn]
-            
             self.data_list.append(data)
         
     def __len__(self):
         return len(self.data_list)
     
     def __getitem__(self, index):
+        
         for image_file in self.data_list[index]['image_file']:
             input_image = Image.open(self.image_folder+'/'+image_file).convert('RGB')
             input_tensor = self.preprocess(input_image).unsqueeze(0)

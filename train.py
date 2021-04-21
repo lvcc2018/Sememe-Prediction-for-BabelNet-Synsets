@@ -49,9 +49,6 @@ def build_mask_numpy(sentences):
         mask_numpy[i, 0:len(sentences[i])] = np.ones(len(sentences[i]),dtype=int)
     return mask_numpy
 
-def build_image_numpy(images):
-    pass
-
 def get_sememe_label(sememes):
     l = np.zeros((len(sememes), sememe_number), dtype=np.float32)
     for i in range(len(sememes)):
@@ -286,12 +283,10 @@ def train(args):
             for sememes_t, definition_words_t, sememes, mask_t, idx, idx_sememes_t, idx_sememes, idx_mask, image_tensor in tqdm(dataloaders['train']):
                 optimizer.zero_grad()
                 encoder_optimizer.zero_grad()
-                encoder_optimizer2.zero_grad()
-                loss, score, indices = model('pretrain',device = device, x=definition_words_t, y=idx_sememes_t, mask = mask_t, index = idx, index_mask = idx_mask)
+                loss, score, indices = model('pretrain',device = device, x=definition_words_t, y=idx_sememes_t, mask = mask_t, index = idx, index_mask = idx_mask, image=image_tensor)
                 loss.backward()
                 optimizer.step()
                 encoder_optimizer.step()
-                encoder_optimizer2.step()
                 predicted = indices.detach().cpu().numpy().tolist()
                 score = score.detach().cpu().numpy()
                 for i in range(len(idx_sememes)):
@@ -304,7 +299,7 @@ def train(args):
             prevalid_loss = 0
             prevalid_f1 = 0
             for sememes_t, definition_words_t, sememes, mask_t, idx, idx_sememes_t, idx_sememes, idx_mask, image_tensor in tqdm(dataloaders['valid']):
-                loss, score, indices = model('pretrain',device = device, x=definition_words_t, y=idx_sememes_t, mask = mask_t, index = idx, index_mask = idx_mask)
+                loss, score, indices = model('pretrain',device = device, x=definition_words_t, y=idx_sememes_t, mask = mask_t, index = idx, index_mask = idx_mask, image = image_tensor)
                 predicted = indices.detach().cpu().numpy().tolist()
                 score = score.detach().cpu().numpy()
                 for i in range(len(idx_sememes)):
@@ -322,7 +317,7 @@ def train(args):
                 torch.save(model.state_dict(), os.path.join('output', args.result))
         print(f'pretrain max valid map {max_valid_map}, pretrain max valid f1 {max_valid_f1}')
         model.load_state_dict(torch.load(os.path.join('output', args.result)))
-
+    # model.load_state_dict(torch.load(os.path.join('output', 'model')))
     max_valid_map = 0
     max_valid_epoch = 0
     max_valid_f1 = 0
@@ -336,7 +331,7 @@ def train(args):
         for sememes_t, definition_words_t, sememes, mask_t, idx, idx_sememes_t, idx_sememes, idx_mask, image_tensor in tqdm(dataloaders['train']):
             optimizer.zero_grad()
             encoder_optimizer.zero_grad()
-            loss, score, indices = model('train',device = device, x=definition_words_t, y=idx_sememes_t, mask = mask_t, index = idx, index_mask = idx_mask, image = image_tensor)
+            loss, score, indices = model('train',device = device, x=definition_words_t, y=sememes_t, mask = mask_t, index = idx, index_mask = idx_mask, image = image_tensor)
             loss.backward()
             optimizer.step()
             encoder_optimizer.step()
@@ -354,7 +349,7 @@ def train(args):
         valid_f1 = 0
         model.eval()
         for sememes_t, definition_words_t, sememes, mask_t, idx, idx_sememes_t, idx_sememes, idx_mask, image_tensor in tqdm(dataloaders['valid']):
-            loss, score, indices = model('train',device = device, x=definition_words_t, y=idx_sememes_t, mask = mask_t, index = idx, index_mask = idx_mask, image = image_tensor)
+            loss, score, indices = model('train',device = device, x=definition_words_t, y=sememes_t, mask = mask_t, index = idx, index_mask = idx_mask, image = image_tensor)
             predicted = indices.detach().cpu().numpy().tolist()
             score = score.detach().cpu().numpy()
             for i in range(len(sememes)):
@@ -377,7 +372,7 @@ def train(args):
     test_loss = 0
     test_f1 = 0
     for sememes_t, definition_words_t, sememes, mask_t, idx, idx_sememes_t, idx_sememes, idx_mask, image_tensor in tqdm(dataloaders['test']):
-        loss, score, indices = model('train',device = device, x=definition_words_t, y=idx_sememes_t, mask = mask_t, index = idx, index_mask = idx_mask, image = image_tensor)
+        loss, score, indices = model('train',device = device, x=definition_words_t, y=sememes_t, mask = mask_t, index = idx, index_mask = idx_mask, image = image_tensor)
         score = score.detach().cpu().numpy().tolist()
         predicted = indices.detach().cpu().numpy().tolist()
         for i in range(len(sememes)):
@@ -406,25 +401,28 @@ def test(args):
     datasets = {
         'test':MultiSrcDataset('./data_new/test_synset_image_dic.json','./data/babel_data.json','/data2/private/lvchuancheng/babel_images',tokenizer, transform['test'])
     }
-    for i in range(datasets['test'].__len__()):
-        sequence_length = len(datasets['test'].__getitem__(i)['di'])
-        idx = datasets['test'].__getitem__(i)['si']
-        for idx_pair, sememe in idx:
-            for i in idx_pair:
-                if i > sequence_length:
-                    print(datasets['test'].__getitem__(i))
-                    print(sequence_length)
-                    return
+    dataloaders = {x: torch.utils.data.DataLoader(datasets[x], batch_size=1, shuffle=True, collate_fn = ms_collate_fn) for x in ['test']}
+    for sememes_t, definition_words_t, sememes, mask_t, idx, idx_sememes_t, idx_sememes, idx_mask in dataloaders['test']:
+        print(sememes_t.shape)
+        print(definition_words_t)
+        print(sememes)
+        print(mask_t)
+        print(idx)
+        print(idx_sememes_t.shape)
+        print(idx_sememes)
+        print(idx_mask)
+        break
+
 
 
 
 if __name__ == "__main__":    
     parser = argparse.ArgumentParser()
     parser.add_argument("--sememe_number", type = int, default = sememe_number)
-    parser.add_argument("--batch_size", type = int, default = 1)
+    parser.add_argument("--batch_size", type = int, default = 2)
     parser.add_argument("--hidden_size", type =int ,default = 768)
-    parser.add_argument("--epoch_num", type = int, default = 5)
-    parser.add_argument("--pretrain_epoch_num", type = int, default = 0)
+    parser.add_argument("--epoch_num", type = int, default = 30)
+    parser.add_argument("--pretrain_epoch_num", type = int, default = 40)
     parser.add_argument("--result", type = str, default = 'model')
     parser.add_argument("--threshold", type = int, default = -1)
     parser.add_argument("--pretrain_model_lr", type = float, default = 1e-5)
