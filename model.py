@@ -90,15 +90,10 @@ class ImageEncoder(torch.nn.Module):
         # self.encoder = torch.hub.load('pytorch/vision:v0.9.0', 'resnet18', pretrained=True)
         # self.encoder = torch.hub.load('pytorch/vision:v0.9.0', 'resnet34', pretrained=True)
         self.encoder = models.resnet50(pretrained=True)
-        self.fc = torch.nn.Linear(1000, sememe_number)
-        self.loss = torch.nn.MultiLabelSoftMarginLoss()
 
-    def forward(self, x, y):
+    def forward(self, x):
         output = self.encoder(x)
-        pos_score = self.fc(output)
-        _, indices = torch.sort(pos_score, descending=True)
-        loss = self.loss(pos_score, y)
-        return loss, pos_score, indices 
+        return output
 
 class DefEncoder(torch.nn.Module):
     def __init__(self):
@@ -123,35 +118,65 @@ class MSSP(torch.nn.Module):
         self.sememe_number = args.sememe_number
         self.hidden_size = args.hidden_size
         self.def_encoder = DefEncoder()
+        self.img_encoder = ImageEncoder()
         self.batch_size = args.batch_size
         self.fc = torch.nn.Linear(self.hidden_size, sememe_number)
         self.loss = torch.nn.MultiLabelSoftMarginLoss()
     
-    def forward(self, operation, device, x=None, y=None, mask=None, index=None, index_mask=None):
-        if operation == 'train':
-            h = self.def_encoder(operation = 'train', x = x, mask = mask)
-            pos_score = self.fc(h)
-            _, indices = torch.sort(pos_score, descending=True)
-            loss = self.loss(pos_score, y)
-            return loss, pos_score, indices 
-        elif operation == 'pretrain':
-            h = self.def_encoder(operation = 'pretrain', x = x, mask = mask)
-            piece_state = torch.empty((0, index_mask.shape[1], self.hidden_size), dtype=torch.float32, device=device)
-            for i in range(index_mask.shape[0]):
-                idx_state = torch.empty((0, self.hidden_size), dtype = torch.float32, device=device)
-                for j in index[i]:
-                    # print(j, idx_state.shape, h.shape)
-                    idx_state = torch.cat((idx_state, h[i][j].unsqueeze(0)))
-                piece_state = torch.cat((piece_state, idx_state.unsqueeze(0)))
-            pos_score = self.fc(piece_state)
-            mask_3 = index_mask.to(torch.float32).unsqueeze(2)
-            pos_score = pos_score * mask_3 + (-1e7) * (1 - mask_3)
-            score, _ = torch.max(pos_score, dim=1)
-            _, indices = torch.sort(score, descending=True)
-            loss = self.loss(score, y)
-            return loss, score, indices
-
-
+    def forward(self, operation, device, x=None, y=None, mask=None, index=None, index_mask=None, image=None):
+        if image:
+            image_state = torch.empty((0, 1000), dtype=torch.float32, device=device)
+            for image_emb in image:
+                image_tensor = self.img_encoder(image_emb)
+                image_tensor = torch.mean(image_tensor,0,True)
+                # batch_size * 1000
+                image_state = torch.cat((image_state, image_tensor))
+            if operation == 'train':
+                defin_state = self.def_encoder(operation = 'train', x = x, mask = mask)
+                hidden_state = torch.cat((image_state, defin_state), dim=1)
+                pos_score = self.fc(hidden_state)
+                _, indices = torch.sort(pos_score, descending=True)
+                loss = self.loss(pos_score, y)
+                return loss, pos_score, indices 
+            elif operation == 'pretrain':
+                #TODO:debug
+                defin_state = self.def_encoder(operation = 'pretrain', x = x, mask = mask)
+                piece_state = torch.empty((0, index_mask.shape[1], 768), dtype=torch.float32, device=device)
+                for i in range(index_mask.shape[0]):
+                    idx_state = torch.empty((0, 768), dtype = torch.float32, device=device)
+                    for j in index[i]:
+                        idx_state = torch.cat((idx_state, defin_state[i][j].unsqueeze(0)))
+                    piece_state = torch.cat((piece_state, idx_state.unsqueeze(0)))
+                hidden_state = torch.cat((image_state.unsqueeze(1), piece_state))
+                pos_score = self.fc(hidden_state)
+                mask_3 = index_mask.to(torch.float32).unsqueeze(2)
+                pos_score = pos_score * mask_3 + (-1e7) * (1 - mask_3)
+                score, _ = torch.max(pos_score, dim=1)
+                _, indices = torch.sort(score, descending=True)
+                loss = self.loss(score, y)
+                return loss, score, indices
+        else:
+            if operation == 'train':
+                h = self.def_encoder(operation = 'train', x = x, mask = mask)
+                pos_score = self.fc(h)
+                _, indices = torch.sort(pos_score, descending=True)
+                loss = self.loss(pos_score, y)
+                return loss, pos_score, indices 
+            elif operation == 'pretrain':
+                h = self.def_encoder(operation = 'pretrain', x = x, mask = mask)
+                piece_state = torch.empty((0, index_mask.shape[1], 768), dtype=torch.float32, device=device)
+                for i in range(index_mask.shape[0]):
+                    idx_state = torch.empty((0, 768), dtype = torch.float32, device=device)
+                    for j in index[i]:
+                        idx_state = torch.cat((idx_state, h[i][j].unsqueeze(0)))
+                    piece_state = torch.cat((piece_state, idx_state.unsqueeze(0)))
+                pos_score = self.fc(piece_state)
+                mask_3 = index_mask.to(torch.float32).unsqueeze(2)
+                pos_score = pos_score * mask_3 + (-1e7) * (1 - mask_3)
+                score, _ = torch.max(pos_score, dim=1)
+                _, indices = torch.sort(score, descending=True)
+                loss = self.loss(score, y)
+                return loss, score, indices
 
 class ImageDataset(torch.utils.data.Dataset):
     def __init__(self, data_list, image_folder, transform):
