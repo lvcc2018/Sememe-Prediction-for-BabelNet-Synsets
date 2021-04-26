@@ -9,7 +9,7 @@ from model import *
 import random
 
 tokenizer = XLMRobertaTokenizer.from_pretrained('xlm-roberta-base')
-device = torch.device('cuda:3')
+device = torch.device('cuda:6')
 sememe_number = 2187
 
 def evaluate(ground_truth, prediction, score, threshold):
@@ -317,12 +317,13 @@ def train(args):
                 torch.save(model.state_dict(), os.path.join('output', args.result))
         print(f'pretrain max valid map {max_valid_map}, pretrain max valid f1 {max_valid_f1}')
         model.load_state_dict(torch.load(os.path.join('output', args.result)))
-    # model.load_state_dict(torch.load(os.path.join('output', 'model')))
+    model.load_state_dict(torch.load(os.path.join('output', 'model_image_no_pretrain')))
     max_valid_map = 0
     max_valid_epoch = 0
     max_valid_f1 = 0
 
     for epoch in range(args.epoch_num):
+        torch.cuda.empty_cache()
         print('Train epoch', epoch)
         train_map = 0
         train_loss = 0
@@ -419,7 +420,7 @@ def test(args):
 if __name__ == "__main__":    
     parser = argparse.ArgumentParser()
     parser.add_argument("--sememe_number", type = int, default = sememe_number)
-    parser.add_argument("--batch_size", type = int, default = 2)
+    parser.add_argument("--batch_size", type = int, default = 1)
     parser.add_argument("--hidden_size", type =int ,default = 768)
     parser.add_argument("--epoch_num", type = int, default = 30)
     parser.add_argument("--pretrain_epoch_num", type = int, default = 40)
