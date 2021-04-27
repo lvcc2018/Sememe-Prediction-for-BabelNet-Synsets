@@ -1,14 +1,20 @@
+import argparse
 import json
 import os
-import numpy as np
-import torch
-from tqdm import tqdm
-import argparse
-import OpenHowNet
-from model import *, MSSP
-from data import *, MultiSrcDataset
 import random
+
+import numpy as np
+import OpenHowNet
+import torch
+from torchvision import models, transforms
+from tqdm import tqdm
+from pprint import pprint
 from transformers import XLMRobertaModel, XLMRobertaTokenizer
+
+from data import *
+from data import MultiSrcDataset
+from model import *
+from model import MSSP
 
 sememe_number = 2187
 
@@ -65,7 +71,7 @@ def get_sememe_label(sememes):
 
 
 def get_random_idx(instance):
-    return random.choice(instance['si'])
+    return random.choice(instance['si_tw'])
 
 
 def build_idx(idxs):
@@ -81,10 +87,13 @@ def build_idx(idxs):
 
 def ms_collate_fn(batch):
     sememes = [instance['sememes'] for instance in batch]
-    definition_words = [instance['di'] for instance in batch]
+    definition_words = [instance['di_tw'] for instance in batch]
     idx = [get_random_idx(instance) for instance in batch]
     idx_sememes = [instance[1] for instance in idx]
-    images = [instance['image'] for instance in batch]
+    images = []
+    for instance in batch:
+        if 'image' in instance.keys():
+            images.append(instance['image'])
     return sememes, definition_words, idx, idx_sememes, images
 
 
@@ -135,7 +144,7 @@ def train(args):
 
     print("Data initializing...")
     datasets = {x: MultiSrcDataset(
-        args.data_path+x+'_synset_image_dic.json', args.data_path+'babel_data.json', args.image_path, tokenizer, transform[x]) for x in ['train', 'valid', 'test']
+        args.data_path+x+'_synset_image_dic.json', args.data_path+'babel_data.json', args.image_train, args.image_path, tokenizer, transform[x]) for x in ['train', 'valid', 'test']
     }
     dataloaders = {x: torch.utils.data.DataLoader(
         datasets[x], batch_size=args.batch_size, shuffle=True, collate_fn=ms_collate_fn) for x in ['train', 'valid', 'test']
@@ -177,10 +186,12 @@ def train(args):
     max_valid_f1 = 0
 
     if args.load_model:
+        print("Load model "+args.load_model)
         model.load_state_dict(torch.load(
             os.path.join('output', args.load_model)))
 
     if args.pretrain_epoch_num > 0:
+        counter = 0
         for epoch in range(args.pretrain_epoch_num):
             print('Pretrain epoch ', epoch)
             model.train()
@@ -190,15 +201,15 @@ def train(args):
             for sememes, definition_words, idx, idx_sememes, images in tqdm(dataloaders['train']):
                 sememes_t, definition_words_t, mask_t, idx_sememes_t, idx, idx_mask, image_tensor = build_input(
                     sememes, definition_words, idx, idx_sememes, images, device)
-                optimizer.zero_grad()
                 def_encoder_optimizer.zero_grad()
-                loss, score, indices = model('pretrain', device=device, x=definition_words_t,
-                                             y=idx_sememes_t, mask=mask_t, index=idx, index_mask=idx_mask, image=image_tensor)
+                pretrain_fc_optimizer.zero_grad()
+                loss, score, indices = model('pretrain', device=device, defin=definition_words_t,
+                                             label=idx_sememes_t, mask=mask_t, index=idx, index_mask=idx_mask)
                 loss.backward()
-                optimizer.step()
-                encoder_optimizer.step()
+                def_encoder_optimizer.step()
+                pretrain_fc_optimizer.step()
                 predicted = indices.detach().cpu().numpy().tolist()
-                score = score.detach().cpu().numpy()
+                score = score.detach().cpu().numpy().tolist()
                 for i in range(len(idx_sememes)):
                     m, f = evaluate(
                         idx_sememes[i], predicted[i], score[i], args.threshold)
@@ -212,10 +223,10 @@ def train(args):
             for sememes, definition_words, idx, idx_sememes, images in tqdm(dataloaders['valid']):
                 sememes_t, definition_words_t, mask_t, idx_sememes_t, idx, idx_mask, image_tensor = build_input(
                     sememes, definition_words, idx, idx_sememes, images, device)
-                loss, score, indices = model('pretrain', device=device, x=definition_words_t,
-                                             y=idx_sememes_t, mask=mask_t, index=idx, index_mask=idx_mask, image=image_tensor)
+                loss, score, indices = model('pretrain', device=device, defin=definition_words_t,
+                                             label=idx_sememes_t, mask=mask_t, index=idx, index_mask=idx_mask)
                 predicted = indices.detach().cpu().numpy().tolist()
-                score = score.detach().cpu().numpy()
+                score = score.detach().cpu().numpy().tolist()
                 for i in range(len(idx_sememes)):
                     m, f = evaluate(
                         idx_sememes[i], predicted[i], score[i], args.threshold)
@@ -228,11 +239,16 @@ def train(args):
                 f'prevalid loss {prevalid_loss / valid_data_num}, prevalid map {prevalid_map / valid_data_num}, prevalid f1 {prevalid_f1 / valid_data_num}')
 
             if prevalid_map / valid_data_num > max_valid_map:
+                counter = 0
                 max_valid_epoch = epoch
                 max_valid_map = prevalid_map / valid_data_num
                 max_valid_f1 = prevalid_f1 / valid_data_num
                 torch.save(model.state_dict(),
                            os.path.join('output', args.result))
+            else:
+                counter += 1
+                if counter >= 5:
+                    break
         print(
             f'pretrain max valid map {max_valid_map}, pretrain max valid f1 {max_valid_f1}')
         model.load_state_dict(torch.load(os.path.join('output', args.result)))
@@ -242,6 +258,7 @@ def train(args):
     max_valid_f1 = 0
 
     for epoch in range(args.epoch_num):
+        counter = 0
         torch.cuda.empty_cache()
         print('Train epoch', epoch)
         train_map = 0
@@ -251,14 +268,24 @@ def train(args):
         for sememes, definition_words, idx, idx_sememes, images in tqdm(dataloaders['train']):
             sememes_t, definition_words_t, mask_t, idx_sememes_t, idx, idx_mask, image_tensor = build_input(
                 sememes, definition_words, idx, idx_sememes, images, device)
-            optimizer.zero_grad()
-            encoder_optimizer.zero_grad()
-            loss, score, indices = model('train', device=device, x=definition_words_t,
-                                         y=sememes_t, mask=mask_t, index=idx, index_mask=idx_mask, image=image_tensor)
-            loss.backward()
-            optimizer.step()
-            encoder_optimizer.step()
-            encoder_optimizer2.step()
+            if args.image_train:
+                def_encoder_optimizer.zero_grad()
+                img_encoder_optimizer.zero_grad()
+                ms_fc_optimizer.zero_grad()
+                loss, score, indices = model('train', device=device, defin=definition_words_t,
+                                             label=sememes_t, mask=mask_t, index=idx, index_mask=idx_mask, image=image_tensor)
+                loss.backward()
+                def_encoder_optimizer.step()
+                img_encoder_optimizer.step()
+                ms_fc_optimizer.step()
+            else:
+                def_encoder_optimizer.zero_grad()
+                def_fc_optimizer.zero_grad()
+                loss, score, indices = model(
+                    'train', device=device, defin=definition_words_t, label=sememes_t, mask=mask_t, index=idx, index_mask=idx_mask)
+                loss.backward()
+                def_encoder_optimizer.step()
+                def_fc_optimizer.step()
             predicted = indices.detach().cpu().numpy().tolist()
             score = score.detach().cpu().numpy()
             for i in range(len(sememes)):
@@ -275,8 +302,12 @@ def train(args):
         for sememes, definition_words, idx, idx_sememes, images in tqdm(dataloaders['valid']):
             sememes_t, definition_words_t, mask_t, idx_sememes_t, idx, idx_mask, image_tensor = build_input(
                 sememes, definition_words, idx, idx_sememes, images, device)
-            loss, score, indices = model('train', device=device, x=definition_words_t,
-                                         y=sememes_t, mask=mask_t, index=idx, index_mask=idx_mask, image=image_tensor)
+            if args.image_train:
+                loss, score, indices = model('train', device=device, defin=definition_words_t,
+                                             label=sememes_t, mask=mask_t, index=idx, index_mask=idx_mask, image=image_tensor)
+            else:
+                loss, score, indices = model(
+                    'train', device=device, defin=definition_words_t, label=sememes_t, mask=mask_t, index=idx, index_mask=idx_mask)
             predicted = indices.detach().cpu().numpy().tolist()
             score = score.detach().cpu().numpy()
             for i in range(len(sememes)):
@@ -290,11 +321,15 @@ def train(args):
         print(
             f'valid loss {valid_loss / valid_data_num}, valid map {valid_map /valid_data_num}, valid f1 {valid_f1 / valid_data_num}')
         if valid_map / valid_data_num > max_valid_map:
+            counter = 0
             max_valid_epoch = epoch
             max_valid_map = valid_map / valid_data_num
             max_valid_f1 = valid_f1 / valid_data_num
             torch.save(model.state_dict(), os.path.join('output', args.result))
-
+        else:
+            counter += 1
+            if counter >= 5:
+                break
     print(
         f'train max valid map {max_valid_map}, train max valid map epoch {max_valid_epoch}, train max valid f1 {max_valid_f1}')
     model.load_state_dict(torch.load(os.path.join('output', args.result)))
@@ -305,8 +340,12 @@ def train(args):
     for sememes, definition_words, idx, idx_sememes, images in tqdm(dataloaders['test']):
         sememes_t, definition_words_t, mask_t, idx_sememes_t, idx, idx_mask, image_tensor = build_input(
             sememes, definition_words, idx, idx_sememes, images, device)
-        loss, score, indices = model('train', device=device, x=definition_words_t,
-                                     y=sememes_t, mask=mask_t, index=idx, index_mask=idx_mask, image=image_tensor)
+        if args.image_train:
+            loss, score, indices = model('train', device=device, defin=definition_words_t,
+                                         label=sememes_t, mask=mask_t, index=idx, index_mask=idx_mask, image=image_tensor)
+        else:
+            loss, score, indices = model(
+                'train', device=device, defin=definition_words_t, label=sememes_t, mask=mask_t, index=idx, index_mask=idx_mask)
         score = score.detach().cpu().numpy().tolist()
         predicted = indices.detach().cpu().numpy().tolist()
         for i in range(len(sememes)):
@@ -335,6 +374,8 @@ def test(args):
                                  0.229, 0.224, 0.225]),
         ])
     }
+    tokenizer = XLMRobertaTokenizer.from_pretrained('xlm-roberta-base')
+    device = torch.device('cuda:'+str(args.device_id))
     print("Data initializing...")
     datasets = {
         'test': MultiSrcDataset('./data_new/test_synset_image_dic.json', './data/babel_data.json', '/data2/private/lvchuancheng/babel_images', tokenizer, transform['test'])
@@ -363,16 +404,17 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--def_hidden_size", type=int, default=768)
     parser.add_argument("--img_hidden_size", type=int, default=1000)
-    parser.add_argument("--epoch_num", type=int, default=30)
-    parser.add_argument("--pretrain_epoch_num", type=int, default=40)
+    parser.add_argument("--epoch_num", type=int, default=50)
+    parser.add_argument("--pretrain_epoch_num", type=int, default=50)
     parser.add_argument("--result", type=str, default='model')
     parser.add_argument("--threshold", type=int, default=-1)
     parser.add_argument("--pretrain_model_lr", type=float, default=1e-5)
     parser.add_argument("--classifier_lr", type=float, default=0.001)
     parser.add_argument("--device_id", type=int, default=0)
+    parser.add_argument("--image_train", type=bool, default=False)
+    parser.add_argument("--defin_train", type=bool, default=True)
     args = parser.parse_args()
-    print(args)
+    pprint(args)
     print('Training start...')
     train(args)
-    # test(args)
     print('Training completed!')

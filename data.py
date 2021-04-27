@@ -77,10 +77,11 @@ def get_ids(word_list, tokenizer, hownet_dict, sememe_list, index_offset=0):
 
 
 class MultiSrcDataset(torch.utils.data.Dataset):
-    def __init__(self, synset_image_dic, babel_data, image_folder, tokenizer, transform, lang='ecf'):
+    def __init__(self, synset_image_dic, babel_data, image_train, image_folder, tokenizer, transform, lang='ecf'):
         self.synset_image_dic = json.load(open(synset_image_dic))
         self.synset_list = self.synset_image_dic.keys()
         self.babel_data = json.load(open(babel_data))
+        self.image_train = image_train
         self.image_folder = image_folder
         self.tokenizer = tokenizer
         self.preprocess = transform
@@ -192,14 +193,14 @@ class MultiSrcDataset(torch.utils.data.Dataset):
         return len(self.data_list)
 
     def __getitem__(self, index):
-
-        for image_file in self.data_list[index]['image_file']:
-            input_image = Image.open(
-                self.image_folder+'/'+image_file).convert('RGB')
-            input_tensor = self.preprocess(input_image).unsqueeze(0)
-            if 'image' not in self.data_list[index].keys():
-                self.data_list[index]['image'] = input_tensor
-            else:
-                self.data_list[index]['image'] = torch.cat(
-                    (self.data_list[index]['image'], input_tensor), 0)
+        if self.image_train:
+            for image_file in self.data_list[index]['image_file']:
+                input_image = Image.open(
+                    self.image_folder+'/'+image_file).convert('RGB')
+                input_tensor = self.preprocess(input_image).unsqueeze(0)
+                if 'image' not in self.data_list[index].keys():
+                    self.data_list[index]['image'] = input_tensor
+                else:
+                    self.data_list[index]['image'] = torch.cat(
+                        (self.data_list[index]['image'], input_tensor), 0)
         return self.data_list[index]
