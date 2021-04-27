@@ -3,6 +3,9 @@ data/*.json
 data/*/*.json
 output/
 .vscode/
+data_old/
+image_data/
+data_old.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
