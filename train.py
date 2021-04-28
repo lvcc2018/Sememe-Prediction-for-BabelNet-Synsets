@@ -71,7 +71,10 @@ def get_sememe_label(sememes):
 
 
 def get_random_idx(instance):
-    return random.choice(instance['si_tw'])
+    idx = random.choice(instance['si_tw'])
+    if len(idx[0]) == 0:
+        idx = [[0], [0]]
+    return idx
 
 
 def build_idx(idxs):
@@ -109,7 +112,7 @@ def build_input(sememes, definition_words, idx, idx_sememes, images, device):
     idx = [instance[0] for instance in idx]
     idx_mask = torch.tensor(build_mask_numpy(
         idx), dtype=torch.float32, device=device)
-    idx = build_idx(idx)
+    # idx = build_idx(idx)
     image_tensor = [image.to(device) for image in images]
     return sememes_t, definition_words_t, mask_t, idx_sememes_t, idx, idx_mask, image_tensor
 

@@ -85,11 +85,11 @@ class MSSP(torch.nn.Module):
                     operation='train', x=defin, mask=mask)
                 hidden_state = torch.cat((image_state, defin_state), dim=1)
                 pos_score = self.ms_fc(hidden_state)
-            elif defin:
+            elif defin != None:
                 defin_state = self.def_encoder(
                     operation='train', x=defin, mask=mask)
                 pos_score = self.def_fc(defin_state)
-            elif image:
+            elif image != None:
                 image_state = torch.empty(
                     (0, 1000), dtype=torch.float32, device=device)
                 for image_emb in image:
