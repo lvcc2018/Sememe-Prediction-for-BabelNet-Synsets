@@ -76,14 +76,134 @@ def get_ids(word_list, tokenizer, hownet_dict, sememe_list, index_offset=0):
     return result_ids, result_i2s
 
 
+def preprocess_data(data_dir, synset_image_dic_file, babel_data_file, tokenizer, lang = 'ecf'):
+    synset_image_dic = json.load(open(synset_image_dic))
+    sememe_str = open('sememe_all.txt', 'r', encoding='utf-8').read()
+    sememe_list = sememe_str.split(' ')
+    babel_data = json.load(open(babel_data_file))
+    synset_image_dic = json.load(open(synset_image_dic_file))
+    data_dic = {}
+    wnl = WordNetLemmatizer()
+    lac = thulac.thulac(T2S=True, seg_only=True)
+    hownet_dict = OpenHowNet.HowNetDict()
+    for bn in tqdm(babel_data.keys()):
+        data = {}
+        data['sememes'] = [sememe_list.index(s) for s in [ss.split(
+            '|')[1] for ss in babel_data[bn]['sememes']]]
+        if len(babel_data[bn]['definition_en']) != 0:
+                data['w_e'] = (' | '.join(
+                    [w.lower() for w in babel_data[bn]['word_en']])).split(' ')
+                data['d_e'] = en_lemmatize(
+                    wnl, babel_data[bn]['definition_en'][0].lower())
+        if len(babel_data[bn]['definition_cn']) != 0:
+            temp_w_c = [cn_t2s(lac, w)
+                        for w in babel_data[bn]['word_cn']]
+            data['w_c'] = []
+            for i in range(len(temp_w_c)):
+                data['w_c'] += temp_w_c[i]
+                data['w_c'].append('|')
+            if len(data['w_c']) > 0:
+                data['w_c'].pop()
+            data['d_c'] = cn_t2s(
+                lac, babel_data[bn]['definition_cn'][0])
+        if len(babel_data[bn]['definition_fr']) != 0:
+            data['w_f'] = (' | '.join(
+                [w.lower() for w in babel_data[bn]['word_fr']])).split(' ')
+            data['d_f'] = babel_data[bn]['definition_fr'][0].lower().split(' ')
+        data['di'] = [0]
+        data['di_tw'] = [0]
+        data['si'] = []
+        data['si_tw'] = []
+        index = 0
+        index_tw = 0
+        if 'e' in lang:
+            if 'd_e' in data.keys():
+                result_ids, result_i2s = get_ids(
+                    data['d_e'], tokenizer, hownet_dict, sememe_list, index)
+                result_ids_tw, result_i2s_tw = get_ids(
+                    data['w_e'] + [':'] + data['d_e'], tokenizer, hownet_dict, sememe_list, index_tw)
+                data['di'] += result_ids + [2]
+                data['di_tw'] += result_ids_tw + [2]
+                data['si'] += result_i2s
+                data['si_tw'] += result_i2s_tw
+                index = len(data['di'])
+                index_tw = len(data['di_tw'])
+        if 'c' in lang:
+            if 'd_c' in data.keys():
+                if lang.index('c') != 0:
+                    data['di'] += [2]
+                    data['di_tw'] += [2]
+                    index += 1
+                    index_tw += 1
+                result_ids, result_i2s = get_ids(
+                    data['d_c'], tokenizer, hownet_dict, sememe_list, index)
+                result_ids_tw, result_i2s_tw = get_ids(
+                    data['w_c'] + [':'] + data['d_c'], tokenizer, hownet_dict, sememe_list, index_tw)
+                data['di'] += result_ids + [2]
+                data['di_tw'] += result_ids_tw + [2]
+                data['si'] += result_i2s
+                data['si_tw'] += result_i2s_tw
+                index = len(data['di'])
+                index_tw = len(data['di_tw'])
+        if 'f' in lang:
+            if 'd_f' in data.keys():
+                if lang.index('f') != 0:
+                    data['di'] += [2]
+                    data['di_tw'] += [2]
+                    index += 1
+                    index_tw += 1
+                result_ids, result_i2s = get_ids(
+                    data['d_f'], tokenizer, hownet_dict, sememe_list, index)
+                result_ids_tw, result_i2s_tw = get_ids(
+                    data['w_f'] + [':'] + data['d_f'], tokenizer, hownet_dict, sememe_list, index_tw)
+                data['di'] += result_ids + [2]
+                data['di_tw'] += result_ids_tw + [2]
+                data['si'] += result_i2s
+                data['si_tw'] += result_i2s_tw
+        if len(data['di']) > 512:
+            data['di'] = data['di'][:510] + [2]
+            temp = 0
+            for i in range(len(data['si'])):
+                for j in data['si'][i][0]:
+                    if j > 512 and temp == 0:
+                        temp = i
+                        break
+            if temp != 0:
+                data['si'] = data['si'][:temp]
+        if len(data['di_tw']) > 512:
+            data['di_tw'] = data['di_tw'][:510] + [2]
+            temp = 0
+            for i in range(len(data['si_tw'])):
+                for j in data['si_tw'][i][0]:
+                    if j > 512 and temp == 0:
+                        temp = i
+                        break
+            if temp != 0:
+                data['si_tw'] = data['si_tw'][:temp]
+        if 'd_e' in data.keys():
+            data.pop('w_e')
+            data.pop('d_e')
+        if 'd_c' in data.keys():
+            data.pop('w_c')
+            data.pop('d_c')
+        if 'd_f' in data.keys():
+            data.pop('w_f')
+            data.pop('d_f')
+        
+
+    
+
+
+
+
 class MultiSrcDataset(torch.utils.data.Dataset):
     def __init__(self, synset_image_dic, babel_data, image_train, image_folder, tokenizer, transform, lang='ecf'):
         self.synset_image_dic = json.load(open(synset_image_dic))
-        self.synset_list = self.synset_image_dic.keys()
+        # self.synset_list = self.synset_image_dic.keys()
+        self.synset_list = json.load(open(synset_image_dic))
         self.babel_data = json.load(open(babel_data))
         self.image_train = image_train
         self.image_folder = image_folder
-        self.tokenizer = tokenizer
         self.preprocess = transform
         sememe_str = open('./data/sememe_all.txt',
                           'r', encoding='utf-8').read()
@@ -186,7 +306,7 @@ class MultiSrcDataset(torch.utils.data.Dataset):
                             break
                 if temp != 0:
                     data['si_tw'] = data['si_tw'][:temp]
-            data['image_file'] = self.synset_image_dic[bn]
+            # data['image_file'] = self.synset_image_dic[bn]
             self.data_list.append(data)
 
     def __len__(self):

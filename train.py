@@ -147,7 +147,7 @@ def train(args):
 
     print("Data initializing...")
     datasets = {x: MultiSrcDataset(
-        args.data_path+x+'_synset_image_dic.json', args.data_path+'babel_data.json', args.image_train, args.image_path, tokenizer, transform[x]) for x in ['train', 'valid', 'test']
+        args.data_path+x+'_list.json', args.data_path+'babel_data.json', args.image_train, args.image_path, tokenizer, transform[x]) for x in ['train', 'valid', 'test']
     }
     dataloaders = {x: torch.utils.data.DataLoader(
         datasets[x], batch_size=args.batch_size, shuffle=True, collate_fn=ms_collate_fn) for x in ['train', 'valid', 'test']
@@ -259,9 +259,9 @@ def train(args):
     max_valid_map = 0
     max_valid_epoch = 0
     max_valid_f1 = 0
-
+    counter = 0
     for epoch in range(args.epoch_num):
-        counter = 0
+        
         torch.cuda.empty_cache()
         print('Train epoch', epoch)
         train_map = 0
@@ -362,13 +362,6 @@ def train(args):
 
 def test(args):
     transform = {
-        'train': transforms.Compose([
-            transforms.Resize(256),
-            transforms.RandomCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[
-                                 0.229, 0.224, 0.225]),
-        ]),
         'test': transforms.Compose([
             transforms.Resize(256),
             transforms.CenterCrop(224),
@@ -380,21 +373,39 @@ def test(args):
     tokenizer = XLMRobertaTokenizer.from_pretrained('xlm-roberta-base')
     device = torch.device('cuda:'+str(args.device_id))
     print("Data initializing...")
-    datasets = {
-        'test': MultiSrcDataset('./data_new/test_synset_image_dic.json', './data/babel_data.json', '/data2/private/lvchuancheng/babel_images', tokenizer, transform['test'])
+    datasets = {x: MultiSrcDataset(
+        args.data_path+x+'_synset_image_dic.json', args.data_path+'babel_data.json', args.image_train, args.image_path, tokenizer, transform[x]) for x in ['test']
     }
     dataloaders = {x: torch.utils.data.DataLoader(
         datasets[x], batch_size=1, shuffle=True, collate_fn=ms_collate_fn) for x in ['test']}
-    for sememes_t, definition_words_t, sememes, mask_t, idx, idx_sememes_t, idx_sememes, idx_mask in dataloaders['test']:
-        print(sememes_t.shape)
-        print(definition_words_t)
-        print(sememes)
-        print(mask_t)
-        print(idx)
-        print(idx_sememes_t.shape)
-        print(idx_sememes)
-        print(idx_mask)
-        break
+    test_data_num = dataloaders['test'].__len__()
+    model = MSSP(args)
+    model.to(device)
+    if args.load_model:
+        print("Load model "+args.load_model)
+        model.load_state_dict(torch.load(
+            os.path.join('output', args.load_model)))
+    test_map = 0
+    test_loss = 0
+    test_f1 = 0
+    for sememes, definition_words, idx, idx_sememes, images in tqdm(dataloaders['test']):
+        sememes_t, definition_words_t, mask_t, idx_sememes_t, idx, idx_mask, image_tensor = build_input(
+            sememes, definition_words, idx, idx_sememes, images, device)
+        if args.image_train:
+            loss, score, indices = model('train', device=device, defin=definition_words_t,
+                                         label=sememes_t, mask=mask_t, index=idx, index_mask=idx_mask, image=image_tensor)
+        else:
+            loss, score, indices = model(
+                'train', device=device, defin=definition_words_t, label=sememes_t, mask=mask_t, index=idx, index_mask=idx_mask)
+        score = score.detach().cpu().numpy().tolist()
+        predicted = indices.detach().cpu().numpy().tolist()
+        for i in range(len(sememes)):
+            m, f = evaluate(sememes[i], predicted[i], score[i], args.threshold)
+            test_map += m
+            test_f1 += f
+        test_loss += loss.item()
+    print(
+        f'test loss {test_loss / test_data_num}, test map {test_map / test_data_num}, test f1 {test_f1 / test_data_num}')
 
 
 if __name__ == "__main__":
@@ -420,4 +431,5 @@ if __name__ == "__main__":
     pprint(args)
     print('Training start...')
     train(args)
+    # test(args)
     print('Training completed!')
