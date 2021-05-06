@@ -6,6 +6,7 @@ output/
 data_old/
 image_data/
 data_old.py
+*.json
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
