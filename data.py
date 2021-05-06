@@ -189,8 +189,10 @@ def preprocess_data(data_dir, synset_image_dic_file, babel_data_file, tokenizer,
         if 'd_f' in data.keys():
             data.pop('w_f')
             data.pop('d_f')
-        
-
+        if bn in synset_image_dic.keys():
+            data[bn] = synset_image_dic[bn]
+        data_dic[bn] = data
+    json.dump(data_dic, open('./data.json'))
     
 
 
