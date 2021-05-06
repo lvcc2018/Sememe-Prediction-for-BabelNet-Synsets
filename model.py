@@ -46,10 +46,9 @@ class MSSP(torch.nn.Module):
         self.img_encoder = ImageEncoder()
 
         self.pretrain_fc = torch.nn.Linear(self.def_hidden_size, sememe_number)
-        self.def_fc = torch.nn.Linear(self.def_hidden_size, sememe_number)
         self.img_fc = torch.nn.Linear(self.img_hidden_size, sememe_number)
         self.ms_fc = torch.nn.Linear(
-            self.def_hidden_size+self.img_hidden_size, sememe_number)
+            self.def_hidden_size+self.img_hidden_size, self.def_hidden_size)
 
         self.loss = torch.nn.MultiLabelSoftMarginLoss()
 
@@ -85,10 +84,11 @@ class MSSP(torch.nn.Module):
                     operation='train', x=defin, mask=mask)
                 hidden_state = torch.cat((image_state, defin_state), dim=1)
                 pos_score = self.ms_fc(hidden_state)
+                pos_score = self.pretrain_fc(pos_score)
             elif defin != None:
                 defin_state = self.def_encoder(
                     operation='train', x=defin, mask=mask)
-                pos_score = self.def_fc(defin_state)
+                pos_score = self.pretrain_fc(defin_state)
             elif image != None:
                 image_state = torch.empty(
                     (0, 1000), dtype=torch.float32, device=device)

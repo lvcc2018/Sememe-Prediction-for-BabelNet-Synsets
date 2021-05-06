@@ -119,35 +119,11 @@ def build_input(sememes, definition_words, idx, idx_sememes, images, device):
 
 def train(args):
     print('Global initializing...')
-    tokenizer = XLMRobertaTokenizer.from_pretrained('xlm-roberta-base')
     device = torch.device('cuda:'+str(args.device_id))
-    transform = {
-        'train': transforms.Compose([
-            transforms.Resize(256),
-            transforms.RandomCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[
-                                 0.229, 0.224, 0.225]),
-        ]),
-        'valid': transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[
-                                 0.229, 0.224, 0.225]),
-        ]),
-        'test': transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[
-                                 0.229, 0.224, 0.225]),
-        ])
-    }
 
     print("Data initializing...")
     datasets = {x: MultiSrcDataset(
-        args.data_path+x+'_list.json', args.data_path+'babel_data.json', args.image_train, args.image_path, tokenizer, transform[x]) for x in ['train', 'valid', 'test']
+        'data.json', args.image_path, args.data_path+x+'_list.json') for x in ['train', 'valid', 'test']
     }
     dataloaders = {x: torch.utils.data.DataLoader(
         datasets[x], batch_size=args.batch_size, shuffle=True, collate_fn=ms_collate_fn) for x in ['train', 'valid', 'test']
@@ -261,7 +237,7 @@ def train(args):
     max_valid_f1 = 0
     counter = 0
     for epoch in range(args.epoch_num):
-        
+
         torch.cuda.empty_cache()
         print('Train epoch', epoch)
         train_map = 0
@@ -411,9 +387,9 @@ def test(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--sememe_number", type=int, default=sememe_number)
-    parser.add_argument("--data_path", type=str, default='./data/')
+    parser.add_argument("--data_path", type=str, default='./all_data/')
     parser.add_argument("--image_path", type=str,
-                        default='/data2/private/lvchuancheng/babel_images')
+                        default='/data2/private/lvchuancheng/babel_tensor/')
     parser.add_argument("--load_model", type=str, default=None)
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--def_hidden_size", type=int, default=768)
