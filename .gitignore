@@ -7,6 +7,11 @@ data_old/
 image_data/
 data_old.py
 *.json
+img_data/img_emb.pt
+img_data/img_emb_50.pt
+img_emb_10.pt
+img_emb_10_modified.pt
+main_output/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -83,7 +83,6 @@ def preprocess_data(data_dir, synset_image_dic_file, babel_data_file, tokenizer,
     sememe_list = sememe_str.split(' ')
     babel_data = json.load(open(babel_data_file))
     synset_image_dic = json.load(open(synset_image_dic_file))
-    print(len(synset_image_dic))
     data_dic = {}
     wnl = WordNetLemmatizer()
     lac = thulac.thulac(T2S=True, seg_only=True)
@@ -191,6 +190,7 @@ def preprocess_data(data_dir, synset_image_dic_file, babel_data_file, tokenizer,
         if 'd_f' in data.keys():
             data.pop('w_f')
             data.pop('d_f')
+        data_dic[bn] = data
     json.dump(data_dic, open('./data.json', "w"))
 
 
@@ -202,18 +202,27 @@ def gen_image_tensor(image_dir, synset_image_dic_file, transform):
             input_image = Image.open(image_dir+'/'+image_file).convert('RGB')
             input_tensor = transform(input_image).unsqueeze(0)
             temp = torch.cat((temp, input_tensor), 0)
-        torch.save(temp, '/data2/private/lvchuancheng/babel_tensor/'+bn+'.pt')
+        torch.save(temp, '/data/private/lvchuancheng/image_tensor/'+bn+'.pt')
 
 
 class MultiSrcDataset(torch.utils.data.Dataset):
-    def __init__(self, babel_data_file, image_tensor_path, synset_list):
+    def __init__(self, babel_data_file, image_tensor_path, synset_image_dic_file, synset_list):
         self.babel_data = json.load(open(babel_data_file))
-        self.synset_list = json.load(open(data_list))
+        self.synset_list = json.load(open(synset_list))
+        self.image_tensor_path = image_tensor_path
+        self.synset_image_dic = json.load(open(synset_image_dic_file))
         self.data_list = []
-
+        self.id2bn = json.load(open('id2bn_10.json'))
+        self.bn2id = json.load(open('bn2id_10.json'))
         for bn in tqdm(self.synset_list):
             data = self.babel_data[bn]
-            data['img'] = torch.load(image_tensor_path+bn+'.pt')
+            data['bn_id'] = self.bn2id[bn]
+            if bn in self.synset_image_dic.keys():
+                data['bn_id_mask'] = [1] * len(self.synset_image_dic[bn])
+                data['bn_id_mask'] += [0] * (10 - len(self.synset_image_dic[bn]))
+            else:
+                data['bn_id'] = 10635
+                data['bn_id_mask'] = [0] * 10
             self.data_list.append(data)
 
     def __len__(self):
@@ -227,12 +236,10 @@ if __name__ == '__main__':
     tokenizer = XLMRobertaTokenizer.from_pretrained('xlm-roberta-base')
     transform = transforms.Compose([
         transforms.Resize(256),
-        transforms.RandomCrop(224),
+        transforms.CenterCrop(224),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[
             0.229, 0.224, 0.225]),
     ])
-    preprocess_data('all_data', 'synset_image_dic.json',
-                    'babel_data.json', tokenizer)
-    gen_image_tensor('/data2/private/lvchuancheng/babel_images',
-                     'synset_image_dic.json', transform)
+    preprocess_data('all_data', 'synset_image_dic.json','babel_data.json', tokenizer)
+    gen_image_tensor('/data/private/lvchuancheng/babel_images', 'synset_image_dic.json', transform)
