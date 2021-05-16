@@ -1,16 +1,8 @@
 # Data files
-data/*.json
-data/*/*.json
-output/
+output/*
 .vscode/
-data_old/
-image_data/
-data_old.py
-*.json
-img_data/img_emb.pt
-img_data/img_emb_50.pt
-img_emb_10.pt
-img_emb_10_modified.pt
+babel_data/def_data/*
+babel_data/img_emb/*
 main_output/
 
 # Byte-compiled / optimized / DLL files

@@ -44,7 +44,7 @@ class MSSP(torch.nn.Module):
         self.def_hidden_size = args.def_hidden_size
         self.img_hidden_size = args.img_hidden_size
 
-        self.img_emb = torch.load('./img_emb_10_modified.pt')
+        self.img_emb = torch.load('./babel_data/img_emb/img_emb_10_nonorm.pt')
         self.img_emb.requires_grad = False
         self.def_encoder = DefEncoder()
 
@@ -75,13 +75,20 @@ class MSSP(torch.nn.Module):
             return loss, score, indices
         elif operation == 'train':
             def_state = self.def_encoder(operation='train', x=defin, mask=mask)
+            hidden_state = torch.empty((0, self.def_hidden_size), dtype=torch.float32, device=device)
             img_embedding = torch.index_select(self.img_emb, 0, img_idx_list)
             img_embedding = self.M(img_embedding)
-            attention = torch.nn.functional.softmax(torch.matmul(img_embedding, def_state.unsqueeze(2)).squeeze(2)* img_idx_mask, dim=1)
-            img_state = torch.matmul(attention.unsqueeze(1), img_embedding).squeeze(1)
-            # hidden_state = torch.empty((img_state.shape[0], self.def_hidden_size), dtype=torch.float32, device=device)
-            hidden_state = 0.5 * def_state + 0.5 * img_state
-            # hidden_state = def_state
+            attention = torch.empty((0, img_embedding.shape[1]), dtype=torch.float32, device=device)
+            for i in range(def_state.shape[0]):
+                if img_idx_mask[i] == 0:
+                    hidden_state = torch.cat((hidden_state, def_state[i].unsqueeze(0)), dim=0)
+                else:
+                    distance = torch.matmul(img_embedding[i], def_state[i].unsqueeze(1)).squeeze(1)
+                    distance = distance[0:img_idx_mask[i]]
+                    attention_piece = torch.nn.functional.softmax(distance, dim=0)
+                    attention_piece = torch.cat((attention_piece, torch.zeros((img_embedding.shape[1]-img_idx_mask[i]), device = device)))
+                    img_state = torch.matmul(attention_piece.unsqueeze(0), img_embedding[i])
+                    hidden_state = torch.cat((hidden_state, 0.5 * def_state[i].unsqueeze(0) + 0.5 * img_state), dim=0)
             pos_score = self.predict_fc(hidden_state)
             _, indices = torch.sort(pos_score, descending=True)
             loss = self.loss(pos_score, label)
@@ -89,7 +96,7 @@ class MSSP(torch.nn.Module):
             
 if __name__ == '__main__':
     device = torch.device('cuda:0')
-    synset_image_dic_file = 'synset_image_dic_10.json'
+    synset_image_dic_file = './babel_data/synset_image_dic.json'
     synset_image_dic = json.load(open(synset_image_dic_file))
     img_emb = torch.empty((0, 10, 1000),  dtype=torch.float32, device=device)
     transform = transforms.Compose([
@@ -112,10 +119,8 @@ if __name__ == '__main__':
             for i in range(10 - temp.shape[0]):
                 temp = torch.cat((temp, torch.zeros((1,1000), dtype = torch.float32, device=device)))
             img_emb = torch.cat((img_emb, temp.unsqueeze(0)))
-    torch.save(img_emb, './img_emb_10_nonorm.pt')
+    torch.save(img_emb, './img_emb/img_emb_10_nonorm.pt')
     print(img_emb.shape)
-
-
 
 
     

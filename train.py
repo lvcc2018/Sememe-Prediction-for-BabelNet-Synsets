@@ -122,7 +122,7 @@ def train(args):
 
     print("Data initializing...")
     datasets = {x: MultiSrcDataset(
-        'data.json', args.image_path, 'synset_image_dic_10.json', args.data_path+x+'_list.json') for x in ['train', 'valid', 'test']
+        './babel_data/def_data/data.json', args.image_path, './babel_data/synset_image_dic.json', args.data_path+x+'_list.json') for x in ['train', 'valid', 'test']
     }
     dataloaders = {x: torch.utils.data.DataLoader(
         datasets[x], batch_size=args.batch_size, shuffle=True, collate_fn=ms_collate_fn) for x in ['train', 'valid', 'test']
@@ -147,7 +147,8 @@ def train(args):
     ])
 
     optimizer = torch.optim.Adam([
-        {'params': M_parameters, 'lr': args.classifier_lr},
+        {'params': def_encoder_parameters, 'lr': args.pretrain_model_lr},
+        {'params': M_parameters, 'lr': args.M_lr},
         {'params': predict_fc_parameters, 'lr': args.classifier_lr}
     ])
 
@@ -158,7 +159,7 @@ def train(args):
     if args.load_model:
         print("Load model "+args.load_model)
         model.load_state_dict(torch.load(
-            os.path.join('main_output', args.load_model)))
+            os.path.join('output', args.load_model)))
 
     if args.pretrain_epoch_num > 0:
         counter = 0
@@ -171,7 +172,7 @@ def train(args):
             for sememes, definition_words, idx, idx_sememes, bn_id, bn_id_mask in tqdm(dataloaders['train']):
                 sememes_t, definition_words_t, mask_t, idx_sememes_t, idx, idx_mask, img_idx_list, img_idx_mask = build_input(
                     sememes, definition_words, idx, idx_sememes, bn_id, bn_id_mask, device)
-                optimizer.zero_grad()
+                pretrain_optimizer.zero_grad()
                 loss, score, indices = model('pretrain', device=device, defin=definition_words_t,
                                              label=idx_sememes_t, mask=mask_t, index=idx, index_mask=idx_mask, img_idx_list=img_idx_list, img_idx_mask=img_idx_mask)
                 loss.backward()
@@ -212,14 +213,14 @@ def train(args):
                 max_valid_map = prevalid_map / valid_data_num
                 max_valid_f1 = prevalid_f1 / valid_data_num
                 torch.save(model.state_dict(),
-                           os.path.join('main_output', args.result))
+                           os.path.join('output', args.result))
             else:
                 counter += 1
-                if counter >= 5:
+                if counter >= 10:
                     break
         print(
             f'pretrain max valid map {max_valid_map}, pretrain max valid f1 {max_valid_f1}')
-        model.load_state_dict(torch.load(os.path.join('main_output', args.result)))
+        model.load_state_dict(torch.load(os.path.join('output', args.result)))
 
     max_valid_map = 0
     max_valid_epoch = 0
@@ -276,14 +277,14 @@ def train(args):
             max_valid_epoch = epoch
             max_valid_map = valid_map / valid_data_num
             max_valid_f1 = valid_f1 / valid_data_num
-            torch.save(model.state_dict(), os.path.join('main_output', args.result))
+            torch.save(model.state_dict(), os.path.join('output', args.result))
         else:
             counter += 1
-            if counter >= 5:
+            if counter >= 10:
                 break
     print(
         f'train max valid map {max_valid_map}, train max valid map epoch {max_valid_epoch}, train max valid f1 {max_valid_f1}')
-    model.load_state_dict(torch.load(os.path.join('main_output', args.result)))
+    model.load_state_dict(torch.load(os.path.join('output', args.result)))
 
     test_map = 0
     test_loss = 0
@@ -309,23 +310,24 @@ def test(args):
     device = torch.device('cuda:'+str(args.device_id))
     print("Data initializing...")
     datasets = {x: MultiSrcDataset(
-        'data.json', args.image_path, 'synset_image_dic.json',args.data_path+x+'_list.json') for x in ['test']
+        './babel_data/def_data/data.json', args.image_path, './babel_data/synset_image_dic.json', args.data_path+x+'_list.json') for x in ['test']
     }
     dataloaders = {x: torch.utils.data.DataLoader(
-        datasets[x], batch_size=1, shuffle=True, collate_fn=ms_collate_fn) for x in ['test']}
+        datasets[x], batch_size=args.batch_size, shuffle=True, collate_fn=ms_collate_fn) for x in ['test']
+    }
     test_data_num = dataloaders['test'].__len__()
     model = MSSP(args)
     model.to(device)
     if args.load_model:
         print("Load model "+args.load_model)
         model.load_state_dict(torch.load(
-            os.path.join('main_output', args.load_model)))
+            os.path.join('output', args.load_model)))
     test_map = 0
     test_loss = 0
     test_f1 = 0
-    for sememes, definition_words, idx, idx_sememes, images in tqdm(dataloaders['test']):
-        sememes_t, definition_words_t, mask_t, idx_sememes_t, idx, idx_mask, image_tensor = build_input(
-            sememes, definition_words, idx, idx_sememes, images, device)
+    for sememes, definition_words, idx, idx_sememes, bn_id, bn_id_mask in tqdm(dataloaders['test']):
+        sememes_t, definition_words_t, mask_t, idx_sememes_t, idx, idx_mask, img_idx_list, img_idx_mask = build_input(sememes, definition_words, idx,idx_sememes, bn_id, bn_id_mask, device)
+        print(sememes_t, definition_words_t, mask_t, idx_sememes_t, idx, idx_mask, img_idx_list, img_idx_mask)
         if args.image_train:
             loss, score, indices = model('train', device=device, defin=definition_words_t,
                                          label=sememes_t, mask=mask_t, index=idx, index_mask=idx_mask, image=image_tensor)
@@ -339,8 +341,7 @@ def test(args):
             test_map += m
             test_f1 += f
         test_loss += loss.item()
-    print(
-        f'test loss {test_loss / test_data_num}, test map {test_map / test_data_num}, test f1 {test_f1 / test_data_num}')
+    print(f'test loss {test_loss / test_data_num}, test map {test_map / test_data_num}, test f1 {test_f1 / test_data_num}')
 
 
 if __name__ == "__main__":
@@ -359,6 +360,7 @@ if __name__ == "__main__":
     parser.add_argument("--threshold", type=int, default=-1)
     parser.add_argument("--pretrain_model_lr", type=float, default=1e-5)
     parser.add_argument("--classifier_lr", type=float, default=0.001)
+    parser.add_argument("--M_lr", type=float, default=0.0001)
     parser.add_argument("--device_id", type=int, default=0)
     parser.add_argument("--test", type=bool, default=False)
     args = parser.parse_args()
