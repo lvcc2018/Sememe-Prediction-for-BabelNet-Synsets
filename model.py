@@ -5,6 +5,7 @@ import os
 import torch
 import torch.utils.data
 from torchvision import models, transforms
+from torchvision.transforms import *
 from PIL import Image
 from tqdm import tqdm
 from transformers import XLMRobertaModel, XLMRobertaTokenizer
@@ -99,9 +100,9 @@ if __name__ == '__main__':
     synset_image_dic_file = './babel_data/synset_image_dic.json'
     synset_image_dic = json.load(open(synset_image_dic_file))
     img_emb = torch.empty((0, 10, 1000),  dtype=torch.float32, device=device)
-    transform = transforms.Compose([
-        transforms.Resize([224,224]),
-        transforms.ToTensor(),
+    transform = Compose([
+        TenCrop(224),
+        Lambda(lambda crops: torch.stack([ToTensor()(crop) for crop in crops]))
     ])
     model = ImageEncoder()
     model.to(device)
@@ -116,10 +117,10 @@ if __name__ == '__main__':
                     temp = torch.cat((temp, output))
                 except:
                     continue
-            for i in range(10 - temp.shape[0]):
+            for i in range(100 - temp.shape[0]):
                 temp = torch.cat((temp, torch.zeros((1,1000), dtype = torch.float32, device=device)))
             img_emb = torch.cat((img_emb, temp.unsqueeze(0)))
-    torch.save(img_emb, './img_emb/img_emb_10_nonorm.pt')
+    torch.save(img_emb, './img_emb/img_emb_100.pt')
     print(img_emb.shape)
 
 
