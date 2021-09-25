@@ -18,13 +18,13 @@ class MultiModalForSememePrediction(nn.Module):
         self.text_encoder = XLMRobertaModel.from_pretrained('xlm-roberta-base')
         self.classification_head = nn.Linear(hidden_size, n_labels)
         self.dropout = nn.Dropout(dropout_p)
-        self.classification_head.weight.data.normal_(mean=0.0, std=0.04)
         self.loss = torch.nn.MultiLabelSoftMarginLoss()
 
-    def forward(self, input_ids, input_mask, labels):
+    def forward(self, input_ids, input_mask, labels=None):
         # batch_size * sequence_length
         output = self.text_encoder(
             input_ids=input_ids, attention_mask=input_mask)
+        '''
         output = output.last_hidden_state
         output = self.dropout(output)
         output = self.classification_head(output)
@@ -34,9 +34,15 @@ class MultiModalForSememePrediction(nn.Module):
         output = output * mask + (-1e7) * (1-mask)
         output, _ = torch.max(output, dim=1)
         _, indice = torch.sort(output, descending=True)
-        
+        '''
+        output = output.pooler_output
+        # output = F.sigmoid(output)
+        output = self.dropout(output)
+        output = self.classification_head(output)
+        _, indice = torch.sort(output, descending=True)
+
         # batch_size * label_num
-        if labels:
+        if labels != None:
             loss = self.loss(output, labels)
             return loss, indice
         else:

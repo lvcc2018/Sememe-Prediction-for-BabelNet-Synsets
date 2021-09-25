@@ -1,5 +1,6 @@
 from tqdm import tqdm
 import numpy as np
+import torch
 
 
 def add_args(parser):
@@ -14,7 +15,7 @@ def add_args(parser):
                         type=float,
                         help="The initial learning rate for Adam.")
     parser.add_argument("--num_epochs",
-                        default=3,
+                        default=100,
                         type=int,
                         help="Total number of training epochs to perform.")
     parser.add_argument("--do_train",
@@ -24,7 +25,7 @@ def add_args(parser):
                         action='store_true',
                         help="Whether to run eval or not.")
     parser.add_argument("--device",
-                        default='cuda0',
+                        default='cuda:4',
                         type=str)
     return parser
 
@@ -74,7 +75,7 @@ def evaluate(model, dataloader, device):
             output, indice = model(input_ids=ids, input_mask=masks)
         output = output.detach().cpu().numpy().tolist()
         indice = indice.detach().cpu().numpy().tolist()
-        labels = labels.cpu().numpy().to_list()
+        labels = labels.cpu().numpy().tolist()
         for i in range(len(output)):
             MAP, f1 = calculate_MAP_f1(output[i], indice[i], labels[i], 0.3)
             all_MAP += MAP/len(output)

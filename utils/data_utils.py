@@ -38,6 +38,7 @@ class DataProcesser(object):
         self.babel_data = self.__read_file(babel_data_file)
         self.sememe_idx = self.__read_file(sememe_idx_file)
         self.tokenizer = tokenizer
+        self.idx_sememe = {self.sememe_idx[i]:i for i in self.sememe_idx.keys()}
 
     def __read_file(self, file_name):
         data = pickle.load(open(file_name, 'rb'))
@@ -93,7 +94,7 @@ class DataProcesser(object):
 
     def create_features(self, en_lang=True, zh_lang=False, fr_lang=False, gloss=True, word=False):
         data_file_name = '{}{}{}{}data'.format(
-            'en_' if en_lang else '', 'zh_' if en_lang else '', 'fr_' if en_lang else '', 'ex_' if en_lang else '')
+            'en_' if en_lang else '', 'zh_' if zh_lang else '', 'fr_' if fr_lang else '', 'ex_' if word else '')
         if os.path.exists('data/feature_data/'+data_file_name):
             return self.__read_file('data/feature_data/'+data_file_name)
         feature_dict = {}
@@ -138,3 +139,13 @@ class DataProcesser(object):
 
     def create_dataloader(self, dataset, batch_size, shuffle, collate_fn):
         return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn)
+    
+    def convert_ids_to_sample(self, ids, labels):
+        tokens = self.tokenizer.convert_ids_to_tokens(ids)
+        sememes = []
+        for i in range(len(labels)):
+            if labels[i] == 1:
+                sememes.append(self.idx_sememe[i])
+        return InputSample(tokens, sememes)
+
+
