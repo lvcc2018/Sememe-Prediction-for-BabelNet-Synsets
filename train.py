@@ -8,7 +8,7 @@ from utils.train_utils import *
 import argparse
 import pickle
 import logging
-from transformers import XLMRobertaModel, XLMRobertaTokenizer
+from transformers import XLMRobertaModel, XLMRobertaTokenizer, AdamW
 from transformers import get_linear_schedule_with_warmup
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
@@ -27,7 +27,7 @@ def main():
 
     data = pickle.load(open('data_set/'+args.data_set, 'rb'))
     data_list = {i: data[i] for i in ['train', 'valid', 'test']}
-    data_set = {i: data_processer.create_dataset(data_list[i]) for i in [
+    data_set = {i: data_processer.create_dataset(data_list[i],en_lang=True, zh_lang=True, fr_lang=True, gloss=True, word=True) for i in [
         'train', 'valid', 'test']}
     data_loader = {i: data_processer.create_dataloader(
         data_set[i], args.batch_size, True, data_processer.text_collate_fn) for i in ['train', 'valid', 'test']}
@@ -54,7 +54,7 @@ def main():
         para for name, para in model.classification_head.named_parameters() if para.requires_grad]
     encoder_params = params = list(model.text_encoder.named_parameters())
 
-    optimizer = torch.optim.AdamW([
+    optimizer = AdamW([
         {'params': [p for n, p in encoder_params if not any(
             nd in n for nd in no_decay)], 'weight_decay': 0.01, 'lr':2e-5},
         {'params': classification_head_params, 'lr': 1e-3},
@@ -93,9 +93,9 @@ def main():
             if MAP > best_val_MAP:
                 best_val_MAP = MAP
                 torch.save(model.state_dict(), open(
-                    os.path.join('output', 'model.pt'), 'wb'))
+                    os.path.join('output', 'model_pro.pt'), 'wb'))
     else:
-        state_dict = torch.load(open(os.path.join('output', 'model.pt'), 'rb'))
+        state_dict = torch.load(open(os.path.join('output', 'model_pro.pt'), 'rb'))
         model.load_state_dict(state_dict)
         logger.info("Loaded saved model")
 

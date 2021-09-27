@@ -24,11 +24,9 @@ class MultiModalForSememePrediction(nn.Module):
         # batch_size * sequence_length
         output = self.text_encoder(
             input_ids=input_ids, attention_mask=input_mask)
-        '''
         output = output.last_hidden_state
         output = self.dropout(output)
         output = self.classification_head(output)
-        
         # batch_size * sequence_length * label_num
         mask = input_mask.to(torch.float32).unsqueeze(2)
         output = output * mask + (-1e7) * (1-mask)
@@ -36,11 +34,11 @@ class MultiModalForSememePrediction(nn.Module):
         _, indice = torch.sort(output, descending=True)
         '''
         output = output.pooler_output
-        # output = F.sigmoid(output)
+        output = F.sigmoid(output)
         output = self.dropout(output)
         output = self.classification_head(output)
         _, indice = torch.sort(output, descending=True)
-
+        '''
         # batch_size * label_num
         if labels != None:
             loss = self.loss(output, labels)

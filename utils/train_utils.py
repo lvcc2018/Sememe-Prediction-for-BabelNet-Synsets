@@ -25,7 +25,7 @@ def add_args(parser):
                         action='store_true',
                         help="Whether to run eval or not.")
     parser.add_argument("--device",
-                        default='cuda:4',
+                        default='cuda:1',
                         type=str)
     return parser
 
