@@ -2,4 +2,6 @@
 **/.DS_Store
 output/*
 data/feature_data/*
-data/*
+data/babel_data
+data/babel_data_full.txt
+data/clean_data
