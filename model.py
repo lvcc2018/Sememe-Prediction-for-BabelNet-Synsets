@@ -26,6 +26,7 @@ class MultiModalForSememePrediction(nn.Module):
             input_ids=input_ids, attention_mask=input_mask)
         output = output.last_hidden_state
         output = self.dropout(output)
+        # output = self.dropout(output)
         output = self.classification_head(output)
         # batch_size * sequence_length * label_num
         mask = input_mask.to(torch.float32).unsqueeze(2)
@@ -42,6 +43,6 @@ class MultiModalForSememePrediction(nn.Module):
         # batch_size * label_num
         if labels != None:
             loss = self.loss(output, labels)
-            return loss, indice
+            return loss, output, indice
         else:
             return output, indice

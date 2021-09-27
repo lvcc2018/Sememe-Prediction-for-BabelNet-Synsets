@@ -23,44 +23,46 @@ def main():
     args = parser.parse_args()
 
     tokenizer = XLMRobertaTokenizer.from_pretrained('xlm-roberta-base')
-    data_processer = DataProcesser('data/clean_data', 'data/sememe_idx', tokenizer)
+    data_processer = DataProcesser(
+        'data/clean_data', 'data/sememe_idx', tokenizer)
 
     data = pickle.load(open('data_set/'+args.data_set, 'rb'))
     data_list = {i: data[i] for i in ['train', 'valid', 'test']}
-    data_set = {i: data_processer.create_dataset(data_list[i],en_lang=True, zh_lang=True, fr_lang=True, gloss=True, word=True) for i in [
+    data_set = {i: data_processer.create_dataset(data_list[i], en_lang=args.en, zh_lang=args.zh, fr_lang=args.fr, gloss=args.gloss, word=args.word) for i in [
         'train', 'valid', 'test']}
     data_loader = {i: data_processer.create_dataloader(
         data_set[i], args.batch_size, True, data_processer.text_collate_fn) for i in ['train', 'valid', 'test']}
 
     logger.info("Data Initialization Succeeded!")
 
-    model = MultiModalForSememePrediction(SEMEME_NUM, 768, 0.3)
+    model = MultiModalForSememePrediction(
+        SEMEME_NUM, args.hidden_size, args.dropout)
     logger.info("Model Initialization Succeeded!")
 
     device = args.device
     model.to(device)
 
     # no_decay = ['bias', 'final_layer_norm.weight']
-    # params = list(model.named_parameters())
-    # optimizer_grouped_parameters = [
-    #     {'params': [p for n, p in params if not any(
-    #         nd in n for nd in no_decay)], 'weight_decay': 0.01},
-    #     {'params': [p for n, p in params if any(
-    #         nd in n for nd in no_decay)], 'weight_decay': 0.0}
-    # ]
-    no_decay = ['bias', 'final_layer_norm.weight']
 
-    classification_head_params = [
-        para for name, para in model.classification_head.named_parameters() if para.requires_grad]
-    encoder_params = params = list(model.text_encoder.named_parameters())
+    # classification_head_params = [
+    #     para for name, para in model.classification_head.named_parameters() if para.requires_grad]
+    # encoder_params = params = list(model.text_encoder.named_parameters())
+
+    # optimizer = AdamW([
+    #     {'params': [p for n, p in encoder_params if not any(
+    #         nd in n for nd in no_decay)], 'weight_decay': 0.01, 'lr':2e-5},
+    #     {'params': classification_head_params, 'lr': 1e-3},
+    #     {'params': [p for n, p in encoder_params if any(
+    #         nd in n for nd in no_decay)], 'weight_decay': 0.0, 'lr':2e-5}
+    # ])
 
     optimizer = AdamW([
-        {'params': [p for n, p in encoder_params if not any(
-            nd in n for nd in no_decay)], 'weight_decay': 0.01, 'lr':2e-5},
-        {'params': classification_head_params, 'lr': 1e-3},
-        {'params': [p for n, p in encoder_params if any(
-            nd in n for nd in no_decay)], 'weight_decay': 0.0, 'lr':2e-5}
+        {'params': [p for n, p in model.classification_head.named_parameters(
+        ) if p.requires_grad], 'lr':args.classifier_learning_rate},
+        {'params': [p for n, p in model.text_encoder.named_parameters(
+        ) if p.requires_grad], 'lr':args.encoder_learning_rate, 'momentum':0.9, 'weight_decay':1e-2}
     ])
+
     if args.do_train:
         logger.info("***** Running training *****")
         logger.info("  Num batches = %d", len(data_loader['train']))
@@ -76,26 +78,27 @@ def main():
                 optimizer.zero_grad()
                 batch = tuple(t.to(device) for t in batch)
                 ids, masks, labels = batch
-                loss, indice = model(
+                loss, output, indice = model(
                     input_ids=ids, input_mask=masks, labels=labels)
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+                # torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                 optimizer.step()
                 tr_loss += loss.item()
                 tbar.set_description('Epoch %d Loss = %.4f' %
                                      (epoch, tr_loss / (step+1)))
 
-            logger.info("Testing on validation set...")
-            MAP, f1 = evaluate(model, data_loader['train'], device)
-            logger.info("MAP=%.4f on train set." % (MAP))
-            MAP, f1 = evaluate(model, data_loader['valid'], device)
-            logger.info("MAP=%.4f on valid set." % (MAP))
+            # logger.info("Testing on validation set...")
+            # MAP, f1 = evaluate(model, data_loader['train'], device)
+            # logger.info("MAP=%.4f on train set." % (MAP))
+            Loss, MAP, f1 = evaluate(model, data_loader['valid'], device)
+            logger.info("Loss=%.4f, MAP=%.4f on valid set." % (Loss, MAP))
             if MAP > best_val_MAP:
                 best_val_MAP = MAP
                 torch.save(model.state_dict(), open(
-                    os.path.join('output', 'model_pro.pt'), 'wb'))
+                    os.path.join('output', args.model_name), 'wb'))
     else:
-        state_dict = torch.load(open(os.path.join('output', 'model_pro.pt'), 'rb'))
+        state_dict = torch.load(
+            open(os.path.join('output', args.model_name), 'rb'))
         model.load_state_dict(state_dict)
         logger.info("Loaded saved model")
 
@@ -104,7 +107,7 @@ def main():
         logger.info("  Num examples = %d", len(data_loader['test']))
         logger.info("  Batch size = %d", args.batch_size)
 
-        MAP, f1 = evaluate(model, data_loader['test'], device)
+        Loss, MAP, f1 = evaluate(model, data_loader['test'], device)
         output_eval_file = os.path.join('output', "eval_results.txt")
         with open(output_eval_file, "w") as writer:
             logger.info("***** Test evaluation completed *****")
