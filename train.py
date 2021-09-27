@@ -23,8 +23,7 @@ def main():
     args = parser.parse_args()
 
     tokenizer = XLMRobertaTokenizer.from_pretrained('xlm-roberta-base')
-    data_processer = DataProcesser(
-        'data/babel_data', 'data/sememe_idx', tokenizer)
+    data_processer = DataProcesser('data/clean_data', 'data/sememe_idx', tokenizer)
 
     data = pickle.load(open('data_set/'+args.data_set, 'rb'))
     data_list = {i: data[i] for i in ['train', 'valid', 'test']}

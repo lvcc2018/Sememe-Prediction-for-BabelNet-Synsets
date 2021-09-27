@@ -51,15 +51,15 @@ class DataProcesser(object):
         return self.babel_data
 
     def __get_text(self, synset, lang='e', gloss=True, word=False):
-        text = ''
+        text = []
         if word:
             if len(synset['w_' + lang]) > 0:
-                text += '|'.join(synset['w_'+lang])
+                text += ' | '.join(synset['w_'+lang]).split(' ')
         if gloss:
             if len(synset['d_'+lang+'_m']) > 0:
-                text += ':' + synset['d_'+lang+'_m']
+                text += [':'] + synset['d_'+lang+'_m']
             elif len(synset['d_'+lang]) > 0:
-                text += ':' + synset['d_'+lang][0]
+                text += [':'] + synset['d_'+lang][0]
         if len(text) > 0 and text[0] == ':':
             text = text[1:]
         return text
@@ -82,8 +82,9 @@ class DataProcesser(object):
     def __convert_sample_to_feature(self, sample):
         ids = ['<s>']
         for t in sample.text:
-            tokens = self.tokenizer.tokenize(t)
-            ids += tokens
+            for i in t:
+                token = self.tokenizer.tokenize(i)
+                ids += token
             ids += ['</s>', '</s>']
         if ids[-2] == '</s>':
             ids = ids[:-1]
