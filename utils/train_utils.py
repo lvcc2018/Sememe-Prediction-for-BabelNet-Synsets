@@ -41,9 +41,6 @@ def add_args(parser):
     parser.add_argument("--device",
                         default='cuda:4',
                         type=str)
-    parser.add_argument("--model_name",
-                        default='model.pt',
-                        type=str)
     parser.add_argument("--en",
                         action='store_true')
     parser.add_argument("--zh",
@@ -115,3 +112,18 @@ def evaluate(model, dataloader, device):
     all_MAP /= len(dataloader)
     all_f1 /= len(dataloader)
     return all_loss, all_MAP, all_f1
+
+
+def get_model_name(args):
+    model_name = []
+    if args.word:
+        model_name.append('word')
+    if args.gloss:
+        model_name.append('gloss')
+    if args.en:
+        model_name.append('en')
+    if args.zh:
+        model_name.append('zh')
+    if args.fr:
+        model_name.append('fr')
+    return '_'.join(model_name)+'.pt'

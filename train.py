@@ -22,6 +22,8 @@ def main():
     parser = add_args(parser)
     args = parser.parse_args()
 
+    model_name = get_model_name(args)
+
     tokenizer = XLMRobertaTokenizer.from_pretrained('xlm-roberta-base')
     data_processer = DataProcesser(
         'data/clean_data', 'data/sememe_idx', tokenizer)
@@ -95,10 +97,10 @@ def main():
             if MAP > best_val_MAP:
                 best_val_MAP = MAP
                 torch.save(model.state_dict(), open(
-                    os.path.join('output', args.model_name), 'wb'))
+                    os.path.join('output', model_name), 'wb'))
     else:
         state_dict = torch.load(
-            open(os.path.join('output', args.model_name), 'rb'))
+            open(os.path.join('output', model_name), 'rb'))
         model.load_state_dict(state_dict)
         logger.info("Loaded saved model")
 
@@ -113,7 +115,7 @@ def main():
             logger.info("***** Test evaluation completed *****")
             logger.info("MAP=%.4f, f1=%.4f" % (MAP, f1))
             logger.info("***** Writing results to file *****")
-            writer.write("MAP=%.4f, f1=%.4f" % (MAP, f1))
+            writer.write(model_name+" MAP=%.4f, f1=%.4f" % (MAP, f1))
             logger.info("Done.")
 
 
