@@ -7,6 +7,7 @@ import OpenHowNet
 import torch
 from transformers import XLMRobertaTokenizer
 import random
+import requests
 
 SEMEME_NUM = 1961
 
@@ -275,6 +276,34 @@ class DataProcesser(object):
         label = [self.sememe_idx[i] for i in synset['s']]
         sample = InputSample(text, label)
         return sample
+
+
+class ImgDataProcesser(object):
+    def __init__(self):
+        super().__init__()
+        self.babel_img_path = '/data2/private/lvchuancheng/babel_images/'
+        self.babel_data = '../data/babel_data'
+        self.babel_img_nums = {}
+    
+    def download_imgs(self):
+        babel_data = pickle.load(open(self.babel_data,'rb'))
+        for k in tqdm(babel_data.keys()):
+            num = 0
+            urls = babel_data[k]['i']
+            if len(urls) > 0:
+                for u in urls:
+                    img_name = k + str(num) + '.' + u.split('.')[-1]
+                    try:
+                        r = requests.get(u, timeout=10)
+                        if r.status_code == 200:
+                            with open(self.babel_img_path+img_name, 'wb') as f:
+                                f.write(r.content)
+                            num += 1
+                            if num == 20:
+                                break
+                    except:
+                        continue
+                self.babel_img_nums[k] = num
 
 
 if __name__ == '__main__':
