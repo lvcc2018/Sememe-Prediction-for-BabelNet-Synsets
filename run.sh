@@ -1,3 +1,2 @@
 #!/bin/bash
-python train.py --do_train --gloss --en --fr --zh --num_epochs 40
-python train.py --do_train --word --en --fr --zh --num_epochs 40
+CUDA_LAUNCH_BLOCKING=1 python train.py --training_mode pretrain --data_set pretrain_gloss_data_en_zh --do_train --en --zh --gloss --pretrain_num_epochs 50 --device cuda:0

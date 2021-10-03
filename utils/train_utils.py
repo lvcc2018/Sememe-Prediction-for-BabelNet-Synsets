@@ -4,6 +4,15 @@ import torch
 
 
 def add_args(parser):
+    parser.add_argument("--training_mode",
+                        default='train',
+                        type=str)
+    parser.add_argument("--load_model",
+                        default='NOT_LOAD',
+                        type=str)
+    parser.add_argument("--pretrain_model",
+                        default='xlm-roberta-base',
+                        type=str)
     parser.add_argument("--data_set",
                         default='all_data',
                         type=str)
@@ -86,36 +95,64 @@ def calculate_MAP_f1(output, indice, ground_truth, threshold):
     return MAP, f1
 
 
-def evaluate(model, dataloader, device):
-    model.eval()
-    y_true = []
-    y_pred = []
-    all_MAP = 0.0
-    all_f1 = 0.0
-    all_loss = 0.0
-    for ids, masks, labels in tqdm(dataloader):
-        ids = ids.to(device)
-        masks = masks.to(device)
-        labels = labels.to(device)
-        with torch.no_grad():
-            loss, output, indice = model(
-                input_ids=ids, input_mask=masks, labels=labels)
-        all_loss += loss.item()
-        output = output.detach().cpu().numpy().tolist()
-        indice = indice.detach().cpu().numpy().tolist()
-        labels = labels.cpu().numpy().tolist()
-        for i in range(len(output)):
-            MAP, f1 = calculate_MAP_f1(output[i], indice[i], labels[i], 0.3)
-            all_MAP += MAP/len(output)
-            all_f1 += f1/len(output)
-    all_loss /= len(dataloader)
-    all_MAP /= len(dataloader)
-    all_f1 /= len(dataloader)
-    return all_loss, all_MAP, all_f1
+def evaluate(mode, model, dataloader, device):
+    if mode == 'train':
+        model.eval()
+        all_MAP = 0.0
+        all_f1 = 0.0
+        all_loss = 0.0
+        for ids, masks, labels in tqdm(dataloader):
+            ids = ids.to(device)
+            masks = masks.to(device)
+            labels = labels.to(device)
+            with torch.no_grad():
+                loss, output, indice = model(mode='train',
+                    input_ids=ids, input_mask=masks, labels=labels)
+            all_loss += loss.item()
+            output = output.detach().cpu().numpy().tolist()
+            indice = indice.detach().cpu().numpy().tolist()
+            labels = labels.cpu().numpy().tolist()
+            for i in range(len(output)):
+                MAP, f1 = calculate_MAP_f1(output[i], indice[i], labels[i], 0.3)
+                all_MAP += MAP/len(output)
+                all_f1 += f1/len(output)
+        all_loss /= len(dataloader)
+        all_MAP /= len(dataloader)
+        all_f1 /= len(dataloader)
+        return all_loss, all_MAP, all_f1
+    elif mode == 'pretrain':
+        model.eval()
+        all_MAP = 0.0
+        all_f1 = 0.0
+        all_loss = 0.0
+        for ids, masks, labels, mask_idx in tqdm(dataloader):
+            ids = ids.to(device)
+            masks = masks.to(device)
+            labels = labels.to(device)
+            mask_idx = mask_idx.to(device)
+            with torch.no_grad():
+                loss, output, indice = model(mode='pretrain',
+                    input_ids=ids, input_mask=masks, labels=labels, mask_idx=mask_idx)
+            all_loss += loss.item()
+            output = output.detach().cpu().numpy().tolist()
+            indice = indice.detach().cpu().numpy().tolist()
+            labels = labels.cpu().numpy().tolist()
+            for i in range(len(output)):
+                MAP, f1 = calculate_MAP_f1(output[i], indice[i], labels[i], 0.3)
+                all_MAP += MAP/len(output)
+                all_f1 += f1/len(output)
+        all_loss /= len(dataloader)
+        all_MAP /= len(dataloader)
+        all_f1 /= len(dataloader)
+        return all_loss, all_MAP, all_f1
 
 
 def get_model_name(args):
     model_name = []
+    model_name.append(args.pretrain_model)
+    model_name.append(args.data_set)
+    if args.load_model != 'NOT_LOAD':
+        model_name.append('pretrained')
     if args.word:
         model_name.append('word')
     if args.gloss:
