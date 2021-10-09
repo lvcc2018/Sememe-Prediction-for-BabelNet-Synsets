@@ -10,6 +10,8 @@ import pickle
 import logging
 from transformers import XLMRobertaModel, XLMRobertaTokenizer, AdamW
 from transformers import get_linear_schedule_with_warmup
+from transformers import logging as log
+log.set_verbosity_error()
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',

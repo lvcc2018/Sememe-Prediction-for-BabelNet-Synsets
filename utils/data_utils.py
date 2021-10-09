@@ -6,6 +6,7 @@ from tqdm import tqdm
 import OpenHowNet
 import torch
 from transformers import XLMRobertaTokenizer
+from multiprocessing.pool import ThreadPool
 import random
 import requests
 
@@ -282,28 +283,36 @@ class ImgDataProcesser(object):
     def __init__(self):
         super().__init__()
         self.babel_img_path = '/data2/private/lvchuancheng/babel_images/'
-        self.babel_data = '../data/babel_data'
-        self.babel_img_nums = {}
+        self.babel_data = pickle.load(open('../data/babel_data','rb'))
+        self.babel_data_list = list(self.babel_data.keys())
     
-    def download_imgs(self):
-        babel_data = pickle.load(open(self.babel_data,'rb'))
-        for k in tqdm(babel_data.keys()):
-            num = 0
-            urls = babel_data[k]['i']
-            if len(urls) > 0:
-                for u in urls:
-                    img_name = k + str(num) + '.' + u.split('.')[-1]
-                    try:
-                        r = requests.get(u, timeout=10)
-                        if r.status_code == 200:
-                            with open(self.babel_img_path+img_name, 'wb') as f:
-                                f.write(r.content)
-                            num += 1
-                            if num == 20:
-                                break
-                    except:
-                        continue
-                self.babel_img_nums[k] = num
+    def download_imgs(self, babel_id, urls):
+        num = 0
+        if len(urls) > 0:
+            for u in urls:
+                img_name = babel_id + str(num) + '.' + u.split('.')[-1]
+                try:
+                    r = requests.get(u, timeout=10)
+                    if r.status_code == 200:
+                        with open(self.babel_img_path+img_name, 'wb') as f:
+                            f.write(r.content)
+                        num += 1
+                        print("download image successfully:{}".format(u))
+                        if num == 10:
+                            break
+                except:
+                    # print("download image failed:{}".format(u))
+                    continue
+    
+    def download_image_thread(self, num_processes, Async=True):
+        pool = ThreadPool(processes=num_processes)
+        for k in self.babel_data.keys():
+            if Async:
+                pool.apply_async(func=self.download_imgs, args=(self.babel_data[k]['id'],self.babel_data[k]['i']))  # 异步
+            else:
+                pool.apply(func=self.download_imgs, args=(self.babel_data[k]['id'],self.babel_data[k]['i']))  # 同步
+        pool.close()
+        pool.join()
 
 
 if __name__ == '__main__':

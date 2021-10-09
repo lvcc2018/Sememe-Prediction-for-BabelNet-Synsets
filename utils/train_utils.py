@@ -107,13 +107,14 @@ def evaluate(mode, model, dataloader, device):
             labels = labels.to(device)
             with torch.no_grad():
                 loss, output, indice = model(mode='train',
-                    input_ids=ids, input_mask=masks, labels=labels)
+                                             input_ids=ids, input_mask=masks, labels=labels)
             all_loss += loss.item()
             output = output.detach().cpu().numpy().tolist()
             indice = indice.detach().cpu().numpy().tolist()
             labels = labels.cpu().numpy().tolist()
             for i in range(len(output)):
-                MAP, f1 = calculate_MAP_f1(output[i], indice[i], labels[i], 0.3)
+                MAP, f1 = calculate_MAP_f1(
+                    output[i], indice[i], labels[i], -3)
                 all_MAP += MAP/len(output)
                 all_f1 += f1/len(output)
         all_loss /= len(dataloader)
@@ -132,13 +133,14 @@ def evaluate(mode, model, dataloader, device):
             mask_idx = mask_idx.to(device)
             with torch.no_grad():
                 loss, output, indice = model(mode='pretrain',
-                    input_ids=ids, input_mask=masks, labels=labels, mask_idx=mask_idx)
+                                             input_ids=ids, input_mask=masks, labels=labels, mask_idx=mask_idx)
             all_loss += loss.item()
             output = output.detach().cpu().numpy().tolist()
             indice = indice.detach().cpu().numpy().tolist()
             labels = labels.cpu().numpy().tolist()
             for i in range(len(output)):
-                MAP, f1 = calculate_MAP_f1(output[i], indice[i], labels[i], 0.3)
+                MAP, f1 = calculate_MAP_f1(
+                    output[i], indice[i], labels[i], 0.3)
                 all_MAP += MAP/len(output)
                 all_f1 += f1/len(output)
         all_loss /= len(dataloader)
