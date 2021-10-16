@@ -148,6 +148,29 @@ def evaluate(mode, model, dataloader, device):
         all_f1 /= len(dataloader)
         return all_loss, all_MAP, all_f1
 
+def img_evaluate(model, dataloader, device):
+    model.eval()
+    all_MAP = 0.0
+    all_f1 = 0.0
+    all_loss = 0.0
+    for ids, labels in tqdm(dataloader):
+        ids = ids.to(device)
+        labels = labels.to(device)
+        with torch.no_grad():
+            loss, output, indice = model(input_ids=ids, labels=labels)
+        all_loss += loss.item()
+        output = output.detach().cpu().numpy().tolist()
+        indice = indice.detach().cpu().numpy().tolist()
+        labels = labels.cpu().numpy().tolist()
+        for i in range(len(output)):
+            MAP, f1 = calculate_MAP_f1(
+                output[i], indice[i], labels[i], -3)
+            all_MAP += MAP/len(output)
+            all_f1 += f1/len(output)
+    all_loss /= len(dataloader)
+    all_MAP /= len(dataloader)
+    all_f1 /= len(dataloader)
+    return all_loss, all_MAP, all_f1
 
 def get_model_name(args):
     model_name = []

@@ -60,3 +60,22 @@ class MultiModalForSememePrediction(nn.Module):
                 return loss, output, indice
             else:
                 return output, indice
+
+class ImgForSememePrediction(nn.Module):
+    def __init__(self, n_labels, hidden_size):
+        super().__init__()
+        self.n_labels = n_labels
+        self.classification_head = nn.Linear(hidden_size, n_labels)
+        self.loss = torch.nn.MultiLabelSoftMarginLoss()
+    
+    def forward(self, input_ids, labels=None):
+        # batch_size * hidden_size
+        output = self.classification_head(input_ids)
+        # batch_size * label_num
+        _, indice = torch.sort(output, descending=True)
+        # batch_size * label_num
+        if labels != None:
+            loss = self.loss(output, labels)
+            return loss, output, indice
+        else:
+            return output, indice

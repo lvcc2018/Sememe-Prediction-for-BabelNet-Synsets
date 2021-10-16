@@ -9,6 +9,8 @@ from transformers import XLMRobertaTokenizer
 from multiprocessing.pool import ThreadPool
 import random
 import requests
+from PIL import Image
+from torchvision import transforms
 
 SEMEME_NUM = 1961
 
@@ -18,6 +20,10 @@ class InputSample(object):
         self.text = text
         self.label = label
 
+class ImgInputFeature(object):
+    def __init__(self, input_ids, label_id):
+        self.input_ids = input_ids
+        self.label_id = label_id
 
 class InputFeature(object):
     def __init__(self, input_ids, input_mask, label_id):
@@ -56,7 +62,8 @@ class MaskDataSet(torch.utils.data.Dataset):
         features = self.feature_list[index]
         feature = features[random.randint(0, len(features)-1)]
         return feature
-
+    
+    
 
 class DataProcesser(object):
 
@@ -64,8 +71,7 @@ class DataProcesser(object):
         self.babel_data = self.__read_file(babel_data_file)
         self.sememe_idx = self.__read_file(sememe_idx_file)
         self.tokenizer = tokenizer
-        self.idx_sememe = {self.sememe_idx[i]
-            : i for i in self.sememe_idx.keys()}
+        self.idx_sememe = {self.sememe_idx[i]: i for i in self.sememe_idx.keys()}
         self.hownet_dict = OpenHowNet.HowNetDict()
 
     def __read_file(self, file_name):
@@ -266,26 +272,24 @@ class DataProcesser(object):
                 sememes.append(self.idx_sememe[i])
         return InputSample(tokens, sememes)
 
-    def __create_pretrain_sample(self, synset, en_lang=True, zh_lang=False, gloss=True, word=False):
-        text = []
-        if en_lang:
-            text.append(self.__get_text(
-                synset, lang='e', gloss=gloss, word=word))
-        if zh_lang:
-            text.append(self.__get_text(
-                synset, lang='c', gloss=gloss, word=word))
-        label = [self.sememe_idx[i] for i in synset['s']]
-        sample = InputSample(text, label)
-        return sample
 
 
 class ImgDataProcesser(object):
     def __init__(self):
         super().__init__()
-        self.babel_img_path = '/data2/private/lvchuancheng/babel_images/'
-        self.babel_data = pickle.load(open('../data/babel_data','rb'))
+        self.babel_img_path = '/data2/private/lvchuancheng/imgs/'
+        self.babel_data = pickle.load(open('./data/babel_data', 'rb'))
         self.babel_data_list = list(self.babel_data.keys())
-    
+        self.sememe_idx = pickle.load(open('./data/sememe_idx','rb'))
+        self.img_list = os.listdir(self.babel_img_path)
+        self.data_preprocess = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[
+                                 0.229, 0.224, 0.225]),
+        ])
+
     def download_imgs(self, babel_id, urls):
         num = 0
         if len(urls) > 0:
@@ -301,26 +305,76 @@ class ImgDataProcesser(object):
                         if num == 10:
                             break
                 except:
-                    # print("download image failed:{}".format(u))
                     continue
-    
+
     def download_image_thread(self, num_processes, Async=True):
         pool = ThreadPool(processes=num_processes)
         for k in self.babel_data.keys():
             if Async:
-                pool.apply_async(func=self.download_imgs, args=(self.babel_data[k]['id'],self.babel_data[k]['i']))  # 异步
+                pool.apply_async(func=self.download_imgs, args=(
+                    self.babel_data[k]['id'], self.babel_data[k]['i']))  # 异步
             else:
-                pool.apply(func=self.download_imgs, args=(self.babel_data[k]['id'],self.babel_data[k]['i']))  # 同步
+                pool.apply(func=self.download_imgs, args=(
+                    self.babel_data[k]['id'], self.babel_data[k]['i']))  # 同步
         pool.close()
         pool.join()
 
+    def create_img_features(self):
+        img_feature_dic = {}
+        for img_file in tqdm(self.img_list):
+            try:
+                input_image = Image.open(self.babel_img_path + img_file)
+                input_tensor = self.data_preprocess(input_image).unsqueeze(0)
+                bn = img_file[:12]
+                if bn not in img_feature_dic.keys():
+                    img_feature_dic[bn] = ImgInputFeature(torch.empty((0,3,224,224)), [self.sememe_idx[s] for s in self.babel_data[bn]['s']])
+                img_feature_dic[bn].input_ids = torch.cat((img_feature_dic[bn].input_ids, input_tensor), dim=0)
+            except:
+                continue
+        pickle.dump(img_feature_dic, open('./data/image_feature_data/img_feature_dic','wb'))
+    
+    def create_img_embeddings(self):
+        img_feature_dic = pickle.load(open('./data/image_feature_data/img_feature_dic','rb'))
+        img_embedding_dic = {}
+        model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet152', pretrained=True)
+        model.to('cuda:5')
+        with torch.no_grad():
+            for k in tqdm(img_feature_dic.keys()):
+                input_feature = img_feature_dic[k].input_ids
+                input_feature = input_feature.to('cuda:5')
+                output_embedding = model(input_feature)
+                output_embedding = output_embedding.cpu()
+                img_embedding_dic[k] = ImgInputFeature(output_embedding, img_feature_dic[k].label_id)
+        pickle.dump(img_embedding_dic, open('./data/image_feature_data/img_embedding_dic','wb'))
+    
+    def create_dataset(self, data_set_list):
+        img_feature_dic = pickle.load(open('data/image_feature_data/img_embedding_dic','rb'))
+        img_feature_list = []
+        for k in data_set_list:
+            for i in range(img_feature_dic[k].input_ids.shape[0]):
+                img_feature_list.append(ImgInputFeature(img_feature_dic[k].input_ids[i], img_feature_dic[k].label_id))
+        return DataSet(img_feature_list)
+    
+    def img_collate_fn(self, batch):
+        ids = [i.input_ids.numpy() for i in batch]
+        labels = self.__create_target([i.label_id for i in batch], SEMEME_NUM)
+        ids = torch.tensor(ids)
+        labels = torch.tensor(labels, dtype=torch.int64)
+        return ids, labels
+    
+    def __create_target(self, batch, label_num):
+        res = []
+        for i in batch:
+            temp = [0]*label_num
+            for j in i:
+                temp[j] = 1
+            res.append(temp)
+        return res
+    
+    def create_dataloader(self, dataset, batch_size, shuffle, collate_fn):
+        return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn)
+
+            
 
 if __name__ == '__main__':
-    tokenizer = XLMRobertaTokenizer.from_pretrained('xlm-roberta-base')
-    d = DataProcesser('data/clean_data', 'data/sememe_idx', tokenizer)
-    d.create_pretrain_features(
-        en_lang=True, zh_lang=True, word=True, gloss=True)
-    d.create_pretrain_features(
-        en_lang=True, zh_lang=True, word=True, gloss=False)
-    d.create_pretrain_features(
-        en_lang=True, zh_lang=True, word=False, gloss=True)
+    pass

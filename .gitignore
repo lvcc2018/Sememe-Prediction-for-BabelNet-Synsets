@@ -6,3 +6,4 @@ data/babel_data
 data/babel_data_full.txt
 data/clean_data
 data/pretrain_featuer_data/*
+data/image_feature_data/*

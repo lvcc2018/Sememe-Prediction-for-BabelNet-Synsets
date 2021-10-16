@@ -68,15 +68,10 @@ def main():
                     loss, output, indice = model(mode='pretrain',
                                                  input_ids=ids, input_mask=masks, labels=labels, mask_idx=mask_index)
                     loss.backward()
-                    # torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
                     optimizer.step()
                     tr_loss += loss.item()
                     tbar.set_description('Epoch %d Loss = %.4f' %
                                          (epoch, tr_loss / (step+1)))
-
-                # logger.info("Testing on validation set...")
-                # MAP, f1 = evaluate(model, data_loader['train'], device)
-                # logger.info("MAP=%.4f on train set." % (MAP))
                 Loss, MAP, f1 = evaluate(
                     args.training_mode, model, data_loader['valid'], device)
                 logger.info("Loss=%.4f, MAP=%.4f on valid set." % (Loss, MAP))
@@ -155,16 +150,13 @@ def main():
                     tbar.set_description('Epoch %d Loss = %.4f' %
                                          (epoch, tr_loss / (step+1)))
 
-                # logger.info("Testing on validation set...")
-                # MAP, f1 = evaluate(model, data_loader['train'], device)
-                # logger.info("MAP=%.4f on train set." % (MAP))
-                Loss, MAP, f1 = evaluate('train', model, data_loader['valid'], device)
+                Loss, MAP, f1 = evaluate(
+                    'train', model, data_loader['valid'], device)
                 logger.info("Loss=%.4f, MAP=%.4f on valid set." % (Loss, MAP))
                 if MAP > best_val_MAP:
                     best_val_MAP = MAP
                     torch.save(model.state_dict(), open(
                         os.path.join('output', model_name), 'wb'))
-        
 
         if args.do_eval:
             logger.info("Loaded saved model")
@@ -180,5 +172,55 @@ def main():
             logger.info("Done.")
 
 
+def train_img():
+    data_processer = ImgDataProcesser()
+    data = pickle.load(open('data_set/babel_img_data', 'rb'))
+    data_list = {i: data[i] for i in ['train', 'valid', 'test']}
+    
+    data_set = {i: data_processer.create_dataset(data_list[i]) for i in ['train', 'valid', 'test']}
+    data_loader = {i: data_processer.create_dataloader(
+        data_set[i], 8, True, data_processer.img_collate_fn) for i in ['train', 'valid', 'test']}
+
+    logger.info("Data Initialization Succeeded!")
+    model = ImgForSememePrediction(SEMEME_NUM, 1000)
+    logger.info("Model Initialization Succeeded!")
+    device = 'cuda:4'
+    model.to(device)
+    optimizer = AdamW([
+        {'params': [p for n, p in model.classification_head.named_parameters(
+        ) if p.requires_grad], 'lr':0.0002},
+    ])
+    logger.info("***** Running training *****")
+    logger.info("  Num batches = %d", len(data_loader['train']))
+    logger.info("  Batch size = %d", 8)
+    best_val_MAP = 0.0
+    best_val_f1 = 0.0
+    for epoch in range(100):
+        tr_loss = 0
+        model.train()
+        tbar = tqdm(data_loader['train'], desc="Iteration")
+        for step, batch in enumerate(tbar):
+            optimizer.zero_grad()
+            batch = tuple(t.to(device) for t in batch)
+            ids, labels = batch
+            loss, output, indice = model(input_ids=ids, labels=labels)
+            loss.backward()
+            optimizer.step()
+            tr_loss += loss.item()
+            tbar.set_description('Epoch %d Loss = %.4f' %
+                                 (epoch, tr_loss / (step+1)))
+        Loss, MAP, f1 = img_evaluate(
+            model, data_loader['valid'], device)
+        logger.info("Loss=%.4f, MAP=%.4f, F1=%.4f on valid set." % (Loss, MAP, f1))
+        if MAP > best_val_MAP:
+            best_val_MAP = MAP
+            torch.save(model.state_dict(), open(
+                os.path.join('output', 'img_single'), 'wb'))
+    Loss, MAP, f1 = img_evaluate(
+            model, data_loader['test'], device)
+    logger.info("Loss=%.4f, MAP=%.4f, F1=%.4f on test set." % (Loss, MAP, f1))
+
+
+
 if __name__ == '__main__':
-    main()
+    train_img()
