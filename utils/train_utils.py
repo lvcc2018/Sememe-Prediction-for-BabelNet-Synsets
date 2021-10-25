@@ -16,11 +16,17 @@ def add_args(parser):
     parser.add_argument("--data_set",
                         default='all_data',
                         type=str)
+    parser.add_argument("--data_feature",
+                        default='img_en_zh_fr_ex_gloss_data_2048',
+                        type=str)
     parser.add_argument("--batch_size",
                         default=8,
                         type=int)
     parser.add_argument("--hidden_size",
                         default=768,
+                        type=int)
+    parser.add_argument("--img_hidden_size",
+                        default=128,
                         type=int)
     parser.add_argument("--classifier_learning_rate",
                         default=1e-3,
@@ -194,6 +200,8 @@ def get_model_name(args):
         model_name.append('zh')
     if args.fr:
         model_name.append('fr')
+    if args.hidden_size != 768 or args.img_hidden_size != 1000:
+        model_name.extend([str(args.hidden_size), str(args.img_hidden_size)])
     if args.utils != 'None':
         model_name.append(args.utils)
     return '_'.join(model_name)+'.pt'

@@ -242,7 +242,7 @@ def multi_source_train():
             data_set[i], args.batch_size, True, data_processer.pretrain_text_collate_fn) for i in ['train', 'valid', 'test']}
         logger.info("Data Initialization Succeeded!")
         model = MultiSourceForSememePrediction(
-            args.pretrain_model, SEMEME_NUM, args.hidden_size, 1000, args.dropout)
+            args.pretrain_model, SEMEME_NUM, args.hidden_size, args.img_hidden_size, args.dropout)
         if args.load_model != 'NOT_LOAD':
             logger.info("Loading Model from {}".format(args.load_model))
             state_dict = torch.load(
@@ -301,12 +301,12 @@ def multi_source_train():
 
     else:
         data_set = {i: data_processer.create_dataset(
-            'img_en_zh_fr_ex_gloss_data', data_list[i]) for i in ['train', 'valid', 'test']}
+            args.data_feature, data_list[i]) for i in ['train', 'valid', 'test']}
         data_loader = {i: data_processer.create_dataloader(
             data_set[i], args.batch_size, True, data_processer.ms_collate_fn) for i in ['train', 'valid', 'test']}
         logger.info("Data Initialization Succeeded!")
         model = MultiSourceForSememePrediction(
-            args.pretrain_model, SEMEME_NUM, args.hidden_size, 1000, args.dropout)
+            args.pretrain_model, SEMEME_NUM, args.hidden_size, args.img_hidden_size, args.dropout)
         if args.load_model != 'NOT_LOAD':
             logger.info("Loading Model from {}".format(args.load_model))
             state_dict = torch.load(
@@ -337,7 +337,15 @@ def multi_source_train():
                 ) if p.requires_grad], 'lr':args.classifier_learning_rate},
                 {'params': [p for n, p in model.text_encoder.named_parameters(
                 ) if p.requires_grad], 'lr':args.encoder_learning_rate, 'momentum':0.9, 'weight_decay':1e-2}
-            ])
+            ]),
+            'train_with_multi_source_pro': AdamW([
+                {'params': [p for n, p in model.classification_head.named_parameters(
+                ) if p.requires_grad], 'lr':args.classifier_learning_rate},
+                {'params': [p for n, p in model.img_encoder_classification_head.named_parameters(
+                ) if p.requires_grad], 'lr':args.classifier_learning_rate},
+                {'params': [p for n, p in model.text_encoder.named_parameters(
+                ) if p.requires_grad], 'lr':args.encoder_learning_rate, 'momentum':0.9, 'weight_decay':1e-2}
+            ]),
         }[args.training_mode]
 
         if args.do_train:

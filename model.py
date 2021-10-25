@@ -92,6 +92,7 @@ class MultiSourceForSememePrediction(nn.Module):
         self.text_pretrain_classification_head = nn.Linear(
             text_hidden_size, n_labels)
         self.img_classification_head = nn.Linear(img_hidden_size, n_labels)
+        self.img_encoder_classification_head = nn.Linear(2048, img_hidden_size)
         self.classification_head = nn.Linear(
             text_hidden_size+img_hidden_size, n_labels)
         self.dropout = nn.Dropout(dropout_p)
@@ -111,6 +112,7 @@ class MultiSourceForSememePrediction(nn.Module):
             output = self.text_encoder(
                 input_ids=text_ids, attention_mask=text_mask)
             output = output.pooler_output
+            output = self.dropout(output)
             output = self.text_pooler_classification_head(output)
         elif mode == 'train_text_with_last_hidden_state':
             output = self.text_encoder(
@@ -126,6 +128,14 @@ class MultiSourceForSememePrediction(nn.Module):
                 input_ids=text_ids, attention_mask=text_mask)
             text_output = text_output.pooler_output
             output = torch.cat([text_output, img_ids], dim=1)
+            output = self.classification_head(output)
+        elif mode == 'train_with_multi_source_pro':
+            text_output = self.text_encoder(
+                input_ids=text_ids, attention_mask=text_mask)
+            text_output = text_output.pooler_output
+            img_output = self.img_encoder_classification_head(img_ids)
+            output = torch.cat([text_output, img_output], dim=1)
+            output = self.dropout(output)
             output = self.classification_head(output)
         _, indice = torch.sort(output, descending=True)
         loss = self.loss(output, labels)

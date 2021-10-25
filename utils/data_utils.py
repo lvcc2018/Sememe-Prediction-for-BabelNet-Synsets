@@ -342,21 +342,27 @@ class ImgDataProcesser(object):
         img_embedding_dic = {}
         model = torch.hub.load('pytorch/vision:v0.10.0',
                                'resnet152', pretrained=True)
-        model.to('cuda:5')
+        model.to('cuda:0')
+        ac = {}
+        def g_a(name):
+            def hook(model, input, output):
+                ac[name] = output.cpu()
+            return hook
+        model.avgpool.register_forward_hook(g_a('avgpool'))
         with torch.no_grad():
             for k in tqdm(img_feature_dic.keys()):
                 input_feature = img_feature_dic[k].input_ids
-                input_feature = input_feature.to('cuda:5')
+                input_feature = input_feature.to('cuda:0')
                 output_embedding = model(input_feature)
-                output_embedding = output_embedding.cpu()
+                output_embedding = ac['avgpool'].squeeze(-1).squeeze(-1)
                 img_embedding_dic[k] = ImgInputFeature(
                     output_embedding, img_feature_dic[k].label_id)
         pickle.dump(img_embedding_dic, open(
-            './data/image_feature_data/img_embedding_dic', 'wb'))
+            './data/image_feature_data/img_embedding_dic_2048', 'wb'))
 
     def create_dataset(self, data_set_list):
         img_feature_dic = pickle.load(
-            open('data/image_feature_data/img_embedding_dic', 'rb'))
+            open('data/image_feature_data/img_embedding_dic_2048', 'rb'))
         img_feature_list = []
         for k in data_set_list:
             for i in range(img_feature_dic[k].input_ids.shape[0]):
@@ -544,16 +550,16 @@ class MultiSourceDataProcesser(object):
         return MaskDataSet(feature_list)
 
     def create_multi_source_features(self, en_lang=True, zh_lang=False, fr_lang=False, gloss=True, word=False):
-        data_file_name = 'img_{}{}{}{}{}data'.format(
+        data_file_name = 'img_{}{}{}{}{}data_2048'.format(
             'en_' if en_lang else '', 'zh_' if zh_lang else '', 'fr_' if fr_lang else '', 'ex_' if word else '', 'gloss_' if gloss else '')
-        if os.path.exists('data/feature_data/'+data_file_name):
+        if os.path.exists('data/multi_source_feature_data/'+data_file_name):
             return self.__read_file('data/feature_data/'+data_file_name)
 
         text_feature_dic = self.create_text_features(
             en_lang=en_lang, zh_lang=zh_lang, fr_lang=fr_lang, gloss=gloss, word=word)
         feature_dict = {}
         img_feature_dic = pickle.load(
-            open('data/image_feature_data/img_embedding_dic', 'rb'))
+            open('data/image_feature_data/img_embedding_dic_2048', 'rb'))
         for k in tqdm(self.babel_data.keys()):
             if k in img_feature_dic.keys():
                 assert(img_feature_dic[k].label_id == text_feature_dic[k].label_id)
